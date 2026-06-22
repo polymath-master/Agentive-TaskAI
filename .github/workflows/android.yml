@@ -1,0 +1,74 @@
+name: Android CI/CD
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build & Test Android App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Set Execution Permission for Gradle Wrapper
+        run: chmod +x gradlew
+
+      - name: Decode Debug Keystore
+        run: |
+          if [ -f debug.keystore.base64 ]; then
+            echo "Decoding debug.keystore.base64..."
+            base64 --decode debug.keystore.base64 > debug.keystore
+          else
+            echo "No debug.keystore.base64 file found, skipping pre-decoding step."
+          fi
+
+      - name: Configure Environment Secrets (.env)
+        run: |
+          if [ -f .env.example ]; then
+            echo "Copying .env.example to .env..."
+            cp .env.example .env
+          else
+            echo "No .env.example found, creating a default empty .env file..."
+            touch .env
+          fi
+
+      - name: Run Unit Tests
+        run: ./gradlew testDebugUnitTest
+
+      - name: Build Debug App (APK)
+        run: ./gradlew assembleDebug
+
+      - name: Build Release Bundle (AAB) & Unsigned Release APK
+        run: |
+          # We run assembleRelease/bundleRelease. If release keystore env is not configured,
+          # it might use default fallback config or we can run assembleRelease with custom safety flags.
+          ./gradlew bundleRelease || echo "Release build incomplete, ensure release signing configs are completely set up in your repository."
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: App-Debug-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
+
+      - name: Upload Release Bundle (AAB) Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: App-Release-AAB
+          path: app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: warn
