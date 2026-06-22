@@ -1,6 +1,14 @@
+# Android build artifacts
+build/
+/captures
+.externalNativeBuild
+.cxx
+
+# Project-specific / IDE files
 *.iml
 .gradle
 .kotlin
+local.properties
 /local.properties
 /.idea/caches
 /.idea/libraries
@@ -9,10 +17,11 @@
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
 .DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
-local.properties
-.env
+
+# Google AI Studio / Gemini environment local/temp files
+.build-outputs/
+metadata.json
 debug.keystore
+debug.keystore.base64
+.env
+
