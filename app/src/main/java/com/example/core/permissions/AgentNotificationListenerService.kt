@@ -8,35 +8,57 @@ import com.example.task.callreminder.CallReminderTask
 
 class AgentNotificationListenerService : NotificationListenerService() {
 
+    companion object {
+        private val handledNotificationKeys = java.util.concurrent.ConcurrentLinkedQueue<String>()
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
         if (sbn == null) return
 
-        val packageName = sbn.packageName
+        val packageName = sbn.packageName ?: ""
         val notification = sbn.notification ?: return
         val extras = notification.extras ?: return
 
-        // Support standard CATEGORY_MISSED_CALL and popular telephone dialers
         val category = notification.category
-        val isMissedCall = category == Notification.CATEGORY_MISSED_CALL || 
-                           packageName.contains("phone") || 
-                           packageName.contains("dialer") || 
-                           extras.getString(Notification.EXTRA_TITLE)?.contains("missed", ignoreCase = true) == true
+        val title = extras.getString(Notification.EXTRA_TITLE) ?: ""
+        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
 
-        if (isMissedCall) {
-            val contactName = extras.getString(Notification.EXTRA_TITLE) ?: 
-                              extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: 
-                              "Unsaved Contact"
-            
-            Log.d("NotificationListener", "Intercepted Missed Call from contact: $contactName (Package: $packageName)")
-            
-            // Trigger the CallReminderTask callback sequence
-            try {
-                val callReminderTask = CallReminderTask(applicationContext)
-                callReminderTask.onMissedCallReceived(contactName)
-            } catch (e: Exception) {
-                Log.e("NotificationListener", "Error updating reminder prompt", e)
-            }
+        // Check if it's a missed call
+        val isMissedCallCategory = category == Notification.CATEGORY_MISSED_CALL
+        val isMissedCallText = title.contains("missed", ignoreCase = true) || 
+                              title.contains("call back", ignoreCase = true) ||
+                              text.contains("missed call", ignoreCase = true)
+
+        val isDialerApp = packageName.contains("phone", ignoreCase = true) || 
+                          packageName.contains("dialer", ignoreCase = true) || 
+                          packageName.contains("telephony", ignoreCase = true)
+
+        val meetsMissedCallCriteria = isMissedCallCategory || (isDialerApp && isMissedCallText)
+
+        if (!meetsMissedCallCriteria) return
+
+        // Deduplicate using notification unique key
+        val key = sbn.key ?: "${packageName}_${notification.`when`}"
+        if (handledNotificationKeys.contains(key)) {
+            Log.d("NotificationListener", "Skipping duplicated missed call notification: $key")
+            return
+        }
+
+        handledNotificationKeys.add(key)
+        if (handledNotificationKeys.size > 20) {
+            handledNotificationKeys.poll()
+        }
+
+        val contactName = if (title.isNotBlank()) title else if (text.isNotBlank()) text else "Unknown Caller"
+
+        Log.d("NotificationListener", "Validated Missed Call from contact: $contactName (Package: $packageName, Key: $key)")
+
+        try {
+            val callReminderTask = CallReminderTask(applicationContext)
+            callReminderTask.onMissedCallReceived(contactName)
+        } catch (e: Exception) {
+            Log.e("NotificationListener", "Error updating reminder prompt", e)
         }
     }
 

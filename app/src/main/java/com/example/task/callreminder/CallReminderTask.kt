@@ -3,7 +3,7 @@ package com.example.task.callreminder
 import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PhoneCallback
+import androidx.compose.material.icons.automirrored.filled.PhoneCallback
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -18,7 +18,7 @@ class CallReminderTask(private val context: Context) : AgentTask {
         id = "callreminder",
         name = "Call Reminder Agent",
         description = "Detects missed calls via notification listener and schedules smart callback reminders on WorkManager.",
-        icon = Icons.Default.PhoneCallback,
+        icon = Icons.AutoMirrored.Filled.PhoneCallback,
         category = TaskCategory.COMMUNICATION
     )
 

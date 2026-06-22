@@ -3,7 +3,7 @@ package com.example.task.whatsapp
 import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Message
+import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -20,7 +20,7 @@ class WhatsAppContinuationTask(private val context: Context) : AgentTask {
         id = "whatsapp",
         name = "WhatsApp Assistant",
         description = "Leverages Accessibility Services to read the active conversation and auto-draft suggested smart responses using Gemini AI.",
-        icon = Icons.Default.Message,
+        icon = Icons.AutoMirrored.Filled.Message,
         category = TaskCategory.COMMUNICATION
     )
 

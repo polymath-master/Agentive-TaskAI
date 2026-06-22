@@ -34,7 +34,8 @@ fun DashboardScreen(
     preferencesManager: PreferencesManager,
     onNavigateToSettings: (String) -> Unit, // passes taskId
     onNavigateToCreator: () -> Unit,
-    onNavigateToHistory: () -> Unit
+    onNavigateToHistory: () -> Unit,
+    onNavigateToGlobalSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -51,6 +52,9 @@ fun DashboardScreen(
 
     // Load list of user-created custom tasks from Room
     val userTasksDb by database.taskDao().getAllUserTasksFlow().collectAsState(initial = emptyList())
+
+    // Load recently cached news articles
+    val cachedArticles by database.taskDao().getAllArticlesFlow().collectAsState(initial = emptyList())
 
     // Combine built-in and user-defined tasks
     val registry = remember { TaskRegistry(context) }
@@ -77,6 +81,9 @@ fun DashboardScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onNavigateToGlobalSettings) {
+                        Icon(imageVector = Icons.Default.Settings, contentDescription = "Global App Settings")
+                    }
                     IconButton(onClick = onNavigateToHistory) {
                         Icon(imageVector = Icons.Default.History, contentDescription = "History Audit logs")
                     }
@@ -204,6 +211,84 @@ fun DashboardScreen(
             LazyColumn(
                 modifier = Modifier.weight(1f)
             ) {
+                if (cachedArticles.isNotEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Newspaper,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        "Recent Syndicated Digests",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text(
+                                    "Showing last cached insights from your registered RSS feeds.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
+                                )
+
+                                cachedArticles.take(3).forEach { article ->
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = article.channel.uppercase(),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    fontWeight = FontWeight.ExtraBold
+                                                )
+                                                Text(
+                                                    text = android.text.format.DateUtils.getRelativeTimeSpanString(article.pubDate).toString(),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.outline
+                                                )
+                                            }
+                                            Text(
+                                                text = article.title,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(top = 4.dp)
+                                            )
+                                            Text(
+                                                text = article.description,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 2,
+                                                modifier = Modifier.padding(top = 4.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 groupedCategories.forEach { category ->
                     val filtered = compiledTasksList.filter { it.metadata.category == category }
                     if (filtered.isNotEmpty()) {

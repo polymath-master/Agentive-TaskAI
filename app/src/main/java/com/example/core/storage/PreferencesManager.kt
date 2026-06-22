@@ -18,6 +18,13 @@ class PreferencesManager(private val context: Context) {
         val REMINDER_DELAY_MINUTES_KEY = intPreferencesKey("reminder_delay_minutes")
         val WHATSAPP_RESPONSE_TONE_KEY = stringPreferencesKey("whatsapp_response_tone")
         val GMAIL_USER_EMAIL_KEY = stringPreferencesKey("gmail_user_email")
+        val RSS_FEEDS_KEY = stringSetPreferencesKey("rss_feeds")
+        val LAST_MISSED_CALL_CONTACT_KEY = stringPreferencesKey("last_missed_call_contact")
+        val DEFAULT_FEEDS = setOf(
+            "https://www.prothomalo.com/feed",
+            "https://www.thedailystar.net/frontpage/rss.xml",
+            "https://bdnews24.com/?widget=rssfeed"
+        )
         
         // Fast key-value for enabling / disabling tasks
         fun taskEnabledKey(taskId: String) = booleanPreferencesKey("task_enabled_$taskId")
@@ -86,6 +93,26 @@ class PreferencesManager(private val context: Context) {
     suspend fun saveGmailUserEmail(email: String) {
         context.dataStore.edit { prefs ->
             prefs[GMAIL_USER_EMAIL_KEY] = email
+        }
+    }
+
+    val rssFeedsFlow: Flow<Set<String>> = context.dataStore.data.map { prefs ->
+        prefs[RSS_FEEDS_KEY] ?: DEFAULT_FEEDS
+    }
+
+    suspend fun saveRssFeeds(feeds: Set<String>) {
+        context.dataStore.edit { prefs ->
+            prefs[RSS_FEEDS_KEY] = feeds
+        }
+    }
+
+    val lastMissedCallContactFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[LAST_MISSED_CALL_CONTACT_KEY] ?: "Unsaved Contact"
+    }
+
+    suspend fun saveLastMissedCallContact(contactName: String) {
+        context.dataStore.edit { prefs ->
+            prefs[LAST_MISSED_CALL_CONTACT_KEY] = contactName
         }
     }
 

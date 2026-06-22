@@ -16,6 +16,7 @@ import com.example.core.storage.PreferencesManager
 import com.example.core.ui.NotificationHelper
 import com.example.task.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -66,10 +67,16 @@ class NewsTask(private val context: Context) : AgentTask {
     }
 
     override suspend fun execute(context: Context, settings: TaskSettings): TaskResult = withContext(Dispatchers.IO) {
-        val rssUrls = (settings.values["rss_sources"] ?: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml")
-            .split(",")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
+        val prefManager = PreferencesManager(context)
+        val rssUrls = try {
+            prefManager.rssFeedsFlow.first().toList()
+        } catch (e: Exception) {
+            listOf(
+                "https://www.prothomalo.com/feed",
+                "https://www.thedailystar.net/frontpage/rss.xml",
+                "https://bdnews24.com/?widget=rssfeed"
+            )
+        }
 
         val client = OkHttpClient()
         val fetchedArticles = mutableListOf<Article>()
