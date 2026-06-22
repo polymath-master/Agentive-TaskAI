@@ -26,6 +26,9 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          add-job-summary: 'always'
+          validate-wrappers: false
 
       - name: Set Execution Permission for Gradle Wrapper
         run: chmod +x gradlew
