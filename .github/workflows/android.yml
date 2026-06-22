@@ -30,6 +30,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
+          gradle-version: '9.3.1'
           add-job-summary: 'always'
           validate-wrappers: false
 
@@ -53,16 +54,16 @@ jobs:
           fi
 
       - name: Run Unit Tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+        run: gradle testDebugUnitTest --no-daemon
 
       - name: Build Debug App (APK)
-        run: ./gradlew assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon
 
       - name: Build Release Bundle (AAB) & Unsigned Release APK
         run: |
           # We run assembleRelease/bundleRelease. If release keystore env is not configured,
           # it might use default fallback config or we can run assembleRelease with custom safety flags.
-          ./gradlew bundleRelease --no-daemon || echo "Release build incomplete, ensure release signing configs are completely set up in your repository."
+          gradle bundleRelease --no-daemon || echo "Release build incomplete, ensure release signing configs are completely set up in your repository."
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
