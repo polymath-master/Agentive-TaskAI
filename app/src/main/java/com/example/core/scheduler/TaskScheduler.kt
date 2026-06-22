@@ -1,0 +1,84 @@
+package com.example.core.scheduler
+
+import android.content.Context
+import android.util.Log
+import androidx.work.*
+import com.example.core.storage.PreferencesManager
+import java.util.concurrent.TimeUnit
+
+class TaskScheduler(private val context: Context) {
+
+    private val workManager = WorkManager.getInstance(context)
+    private val preferencesManager = PreferencesManager(context)
+
+    fun schedulePeriodic(taskId: String, intervalHours: Int, flexMinutes: Int = 15) {
+        val data = Data.Builder()
+            .putString("TASK_ID", taskId)
+            .build()
+
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        // Create periodic request
+        val periodicRequest = PeriodicWorkRequestBuilder<AgentTaskWorker>(
+            intervalHours.toLong(), TimeUnit.HOURS,
+            flexMinutes.toLong(), TimeUnit.MINUTES
+        )
+        .setInputData(data)
+        .setConstraints(constraints)
+        .addTag(taskId)
+        .addTag("AGENT_TASK")
+        .build()
+
+        workManager.enqueueUniquePeriodicWork(
+            "periodic_$taskId",
+            ExistingPeriodicWorkPolicy.UPDATE,
+            periodicRequest
+        )
+        Log.d("TaskScheduler", "Scheduled periodic task: $taskId every $intervalHours hours")
+    }
+
+    fun scheduleOneShot(taskId: String, delayMinutes: Long) {
+        val data = Data.Builder()
+            .putString("TASK_ID", taskId)
+            .build()
+
+        val oneShotRequest = OneTimeWorkRequestBuilder<AgentTaskWorker>()
+            .setInputData(data)
+            .setInitialDelay(delayMinutes, TimeUnit.MINUTES)
+            .addTag(taskId)
+            .addTag("AGENT_TASK")
+            .build()
+
+        workManager.enqueueUniqueWork(
+            "oneshot_$taskId",
+            ExistingWorkPolicy.REPLACE,
+            oneShotRequest
+        )
+        Log.d("TaskScheduler", "Scheduled one-shot task: $taskId with action delay: $delayMinutes minutes")
+    }
+
+    fun executeExpeditedNow(taskId: String) {
+        val data = Data.Builder()
+            .putString("TASK_ID", taskId)
+            .build()
+
+        val expediteRequest = OneTimeWorkRequestBuilder<AgentTaskWorker>()
+            .setInputData(data)
+            .addTag(taskId)
+            .addTag("AGENT_TASK")
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .build()
+
+        workManager.enqueue(expediteRequest)
+        Log.d("TaskScheduler", "Enqueued expedited direct execution for task: $taskId")
+    }
+
+    fun cancelAll(taskId: String) {
+        workManager.cancelAllWorkByTag(taskId)
+        workManager.cancelUniqueWork("periodic_$taskId")
+        workManager.cancelUniqueWork("oneshot_$taskId")
+        Log.d("TaskScheduler", "Cancelled all background executions of task: $taskId")
+    }
+}

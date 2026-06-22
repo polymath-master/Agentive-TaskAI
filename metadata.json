@@ -1,0 +1,6 @@
+{
+  "name": "Agentive TaskAI",
+  "description": "An AI-powered multi-agent automated assistant for scheduling daily briefings, missed call reminders, WhatsApp quick solutions, and workspace emails.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
