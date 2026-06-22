@@ -30,9 +30,6 @@ jobs:
           add-job-summary: 'always'
           validate-wrappers: false
 
-      - name: Set Execution Permission for Gradle Wrapper
-        run: chmod +x gradlew
-
       - name: Decode Debug Keystore
         run: |
           if [ -f debug.keystore.base64 ]; then
@@ -53,16 +50,16 @@ jobs:
           fi
 
       - name: Run Unit Tests
-        run: ./gradlew testDebugUnitTest
+        run: gradle testDebugUnitTest
 
       - name: Build Debug App (APK)
-        run: ./gradlew assembleDebug
+        run: gradle assembleDebug
 
       - name: Build Release Bundle (AAB) & Unsigned Release APK
         run: |
           # We run assembleRelease/bundleRelease. If release keystore env is not configured,
           # it might use default fallback config or we can run assembleRelease with custom safety flags.
-          ./gradlew bundleRelease || echo "Release build incomplete, ensure release signing configs are completely set up in your repository."
+          gradle bundleRelease || echo "Release build incomplete, ensure release signing configs are completely set up in your repository."
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
