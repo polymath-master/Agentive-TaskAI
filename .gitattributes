@@ -1,0 +1,5 @@
+# Treat jar files and images as binary to prevent lines ending conversion corruption
+*.jar binary
+*.png binary
+*.keystore binary
+*.webp binary
