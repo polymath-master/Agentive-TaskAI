@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.BackHandler
 import android.util.Patterns
 import android.widget.Toast
 import androidx.compose.foundation.clickable
@@ -27,6 +28,7 @@ fun GlobalSettingsScreen(
     preferencesManager: PreferencesManager,
     onBack: () -> Unit
 ) {
+    BackHandler(onBack = onBack)
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -47,11 +49,13 @@ fun GlobalSettingsScreen(
     // System permissions state polling (refreshes if user returns from settings)
     var isNotificationEnabled by remember { mutableStateOf(PermissionUtils.isNotificationListenerEnabled(context)) }
     var isAccessibilityEnabled by remember { mutableStateOf(PermissionUtils.isAccessibilityServiceEnabled(context)) }
+    var isOverlayEnabled by remember { mutableStateOf(PermissionUtils.isOverlayPermissionGranted(context)) }
 
     // Fast status check on lifecycle start
     LaunchedEffect(Unit) {
         isNotificationEnabled = PermissionUtils.isNotificationListenerEnabled(context)
         isAccessibilityEnabled = PermissionUtils.isAccessibilityServiceEnabled(context)
+        isOverlayEnabled = PermissionUtils.isOverlayPermissionGranted(context)
     }
 
     Scaffold(
@@ -359,6 +363,39 @@ fun GlobalSettingsScreen(
                         Button(
                             onClick = {
                                 PermissionUtils.openAccessibilitySettings(context)
+                            }
+                        ) {
+                            Text("Configure")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Card for Draw Over Other Apps Overlay permission
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "System Draw Overlays (Toasts / Popups)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                if (isOverlayEnabled) "✅ Authorized & Active" else "❌ Unauthorized. Tap configure.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isOverlayEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                PermissionUtils.openOverlaySettings(context)
                             }
                         ) {
                             Text("Configure")

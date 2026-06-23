@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Agentive TaskAI</string>
+    <string name="accessibility_service_description">TaskAI companion that assists with suggested rapid replies directly inside your active WhatsApp dialogue window.</string>
 </resources>

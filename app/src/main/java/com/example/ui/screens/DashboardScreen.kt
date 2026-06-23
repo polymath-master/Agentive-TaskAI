@@ -40,13 +40,6 @@ fun DashboardScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    // Load active API Key from DataStore
-    val localApiKey by preferencesManager.geminiApiKeyFlow.collectAsState(initial = "")
-    var apiKeyInput by remember { mutableStateOf("") }
-    LaunchedEffect(localApiKey) {
-        apiKeyInput = localApiKey
-    }
-
     // Load theme configuration
     val isDarkTheme by preferencesManager.isDarkThemeFlow.collectAsState(initial = true)
 
@@ -119,48 +112,6 @@ fun DashboardScreen(
                 .padding(innerPadding)
                 .padding(12.dp)
         ) {
-            // Secure API Key Configuration Header Card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Settings Connection Portal", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Securely associate your AI Studio Gemini API credentials below:", style = MaterialTheme.typography.bodySmall)
-                    
-                    Spacer(modifier = Modifier.height(10.dp))
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = apiKeyInput,
-                            onValueChange = { apiKeyInput = it },
-                            placeholder = { Text("Paste Gemini API Key") },
-                            visualTransformation = PasswordVisualTransformation(),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                coroutineScope.launch {
-                                    preferencesManager.saveGeminiApiKey(apiKeyInput)
-                                    Toast.makeText(context, "API Key updated successfully!", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        ) {
-                            Icon(imageVector = Icons.Default.Done, contentDescription = "Save Key")
-                        }
-                    }
-                }
-            }
-
             // AI Instant Execution Output Shimmer/Overlay panel
             AnimatedVisibility(
                 visible = aiOutputDisplay != null,
@@ -243,12 +194,21 @@ fun DashboardScreen(
                                     modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
                                 )
 
+                                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
                                 cachedArticles.take(3).forEach { article ->
                                     Card(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 4.dp),
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                            .padding(vertical = 4.dp)
+                                            .clickable {
+                                                try {
+                                                    uriHandler.openUri(article.link)
+                                                } catch (e: Exception) {
+                                                    // Ignore invalid link formats
+                                                }
+                                            },
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                        border = CardDefaults.outlinedCardBorder()
                                     ) {
                                         Column(modifier = Modifier.padding(12.dp)) {
                                             Row(
@@ -272,6 +232,7 @@ fun DashboardScreen(
                                                 text = article.title,
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.padding(top = 4.dp)
                                             )
                                             Text(
@@ -344,6 +305,9 @@ fun DashboardScreen(
                             )
                         }
                     }
+                }
+                item {
+                    Spacer(modifier = Modifier.height(100.dp))
                 }
             }
         }

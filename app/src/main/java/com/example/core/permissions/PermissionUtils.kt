@@ -62,6 +62,39 @@ object PermissionUtils {
     }
 
     /**
+     * Checks if the app can draw custom overlays on other applications.
+     */
+    fun isOverlayPermissionGranted(context: Context): Boolean {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            Settings.canDrawOverlays(context)
+        } else {
+            true
+        }
+    }
+
+    /**
+     * Launches the system settings panel for Draw Over Other Apps permission.
+     */
+    fun openOverlaySettings(context: Context) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                android.net.Uri.parse("package:${context.packageName}")
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                val fallbackIntent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(fallbackIntent)
+            }
+        }
+    }
+
+    /**
      * Checks all required special permissions for a task block.
      */
     fun isSpecialPermissionGranted(context: Context, permission: SpecialPermission): Boolean {

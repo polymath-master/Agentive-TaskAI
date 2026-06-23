@@ -142,7 +142,8 @@ class MainActivity : ComponentActivity() {
                                 TaskSettingsScreen(
                                     task = activeTask,
                                     preferencesManager = preferencesManager,
-                                    onBack = { currentScreen = Screen.DASHBOARD }
+                                    onBack = { currentScreen = Screen.DASHBOARD },
+                                    onNavigateToGlobalSettings = { currentScreen = Screen.GLOBAL_SETTINGS }
                                 )
                             } else {
                                 currentScreen = Screen.DASHBOARD

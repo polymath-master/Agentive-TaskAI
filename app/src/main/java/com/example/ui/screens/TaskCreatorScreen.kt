@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.BackHandler
 import android.widget.Space
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
@@ -32,6 +33,13 @@ fun TaskCreatorScreen(
     onCancel: () -> Unit
 ) {
     var currentStep by remember { mutableStateOf(1) }
+    BackHandler {
+        if (currentStep > 1) {
+            currentStep--
+        } else {
+            onCancel()
+        }
+    }
     val totalSteps = 6
 
     // Form inputs state

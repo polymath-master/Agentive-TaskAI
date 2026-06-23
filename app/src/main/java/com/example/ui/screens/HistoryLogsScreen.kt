@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,6 +29,7 @@ fun HistoryLogsScreen(
     database: AppDatabase,
     onBack: () -> Unit
 ) {
+    BackHandler(onBack = onBack)
     val coroutineScope = rememberCoroutineScope()
     val dao = remember { database.taskDao() }
     val logsList by dao.getAllHistoryFlow().collectAsState(initial = emptyList())

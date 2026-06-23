@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.BackHandler
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -27,8 +28,10 @@ import kotlinx.coroutines.launch
 fun TaskSettingsScreen(
     task: AgentTask,
     preferencesManager: PreferencesManager,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateToGlobalSettings: (() -> Unit)? = null
 ) {
+    BackHandler(onBack = onBack)
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -115,6 +118,31 @@ fun TaskSettingsScreen(
                                 }
                             }
                         )
+                    }
+                }
+
+                // Redirection card to Global system settings for RSS management
+                if (task.metadata.id == "news" && onNavigateToGlobalSettings != null) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp)
+                            .clickable { onNavigateToGlobalSettings() },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                "RSS Feed Configuration",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "This agent utilizes syndicated news sources configured globally. Tap here to manage, add, or remove your registered news feeds.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 }
 

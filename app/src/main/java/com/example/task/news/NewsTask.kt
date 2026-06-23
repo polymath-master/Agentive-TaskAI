@@ -8,6 +8,9 @@ import androidx.compose.material.icons.filled.Newspaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.core.ai.AIService
 import com.example.core.storage.AppDatabase
@@ -37,31 +40,68 @@ class NewsTask(private val context: Context) : AgentTask {
         settings: TaskSettings,
         onSettingsChanged: (TaskSettings) -> Unit
     ) {
-        val rssSources = settings.values["rss_sources"] ?: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"
+        val context = LocalContext.current
+        val preferencesManager = remember { PreferencesManager(context) }
+        val activeFeeds by preferencesManager.rssFeedsFlow.collectAsState(initial = emptySet())
         val scheduleTime = settings.values["schedule_time"] ?: "11:00"
 
-        var sourcesInput by remember { mutableStateOf(rssSources) }
         var scheduleInput by remember { mutableStateOf(scheduleTime) }
 
-        Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
-            OutlinedTextField(
-                value = sourcesInput,
-                onValueChange = {
-                    sourcesInput = it
-                    onSettingsChanged(TaskSettings(mapOf("rss_sources" to it, "schedule_time" to scheduleInput)))
-                },
-                label = { Text("RSS Feeds (Comma separated)") },
-                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+        Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+            Text(
+                text = "Active Registered RSS Feeds",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(bottom = 8.dp)
             )
+
+            if (activeFeeds.isEmpty()) {
+                Text(
+                    text = "No feeds registered. Feeds can be configured in General System Settings.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            } else {
+                activeFeeds.forEach { feedUrl ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.List,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = feedUrl,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             OutlinedTextField(
                 value = scheduleInput,
                 onValueChange = {
                     scheduleInput = it
-                    onSettingsChanged(TaskSettings(mapOf("rss_sources" to sourcesInput, "schedule_time" to it)))
+                    onSettingsChanged(TaskSettings(mapOf("schedule_time" to it)))
                 },
                 label = { Text("Scheduled Time (HH:MM)") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
         }
     }
@@ -163,10 +203,16 @@ class NewsTask(private val context: Context) : AgentTask {
     }
 
     private fun sanitizeXmlChars(input: String): String {
-        return input.replace("<![CDATA[", "").replace("]]>", "")
+        val cd = input.replace("<![CDATA[", "").replace("]]>", "")
             .replace("&lt;", "<").replace("&gt;", ">")
             .replace("&amp;", "&").replace("&quot;", "\"")
+            .replace("&apos;", "'")
             .trim()
+        return try {
+            androidx.core.text.HtmlCompat.fromHtml(cd, androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim()
+        } catch (e: Exception) {
+            cd.replace(Regex("<[^>]*>"), "").trim()
+        }
     }
 
     private fun getFallbackSimulationNews(source: String): List<Article> {

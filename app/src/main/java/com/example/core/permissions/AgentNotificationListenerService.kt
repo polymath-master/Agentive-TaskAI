@@ -10,6 +10,8 @@ class AgentNotificationListenerService : NotificationListenerService() {
 
     companion object {
         private val handledNotificationKeys = java.util.concurrent.ConcurrentLinkedQueue<String>()
+        private var lastTriggerTime: Long = 0
+        private var lastContactName: String = ""
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
@@ -24,24 +26,47 @@ class AgentNotificationListenerService : NotificationListenerService() {
         val title = extras.getString(Notification.EXTRA_TITLE) ?: ""
         val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
 
-        // Check if it's a missed call
+        // Filter missed call notifications strictly
         val isMissedCallCategory = category == Notification.CATEGORY_MISSED_CALL
-        val isMissedCallText = title.contains("missed", ignoreCase = true) || 
-                              title.contains("call back", ignoreCase = true) ||
-                              text.contains("missed call", ignoreCase = true)
+        
+        val containsMissedCallPhrases = title.contains("missed call", ignoreCase = true) || 
+                                       title.contains("missed video call", ignoreCase = true) ||
+                                       title.contains("missed voice call", ignoreCase = true) ||
+                                       text.contains("missed call", ignoreCase = true) ||
+                                       text.contains("missed video call", ignoreCase = true) ||
+                                       text.contains("missed voice call", ignoreCase = true)
 
         val isDialerApp = packageName.contains("phone", ignoreCase = true) || 
                           packageName.contains("dialer", ignoreCase = true) || 
-                          packageName.contains("telephony", ignoreCase = true)
+                          packageName.contains("telephony", ignoreCase = true) ||
+                          packageName.contains("contacts", ignoreCase = true) ||
+                          packageName.contains("android.server.telecom", ignoreCase = true)
 
-        val meetsMissedCallCriteria = isMissedCallCategory || (isDialerApp && isMissedCallText)
+        // Only process dialer system apps OR explicit missed call category with text phrases
+        val meetsMissedCallCriteria = isMissedCallCategory || (isDialerApp && containsMissedCallPhrases) || containsMissedCallPhrases
 
         if (!meetsMissedCallCriteria) return
 
-        // Deduplicate using notification unique key
+        // Extract contact name securely
+        val contactName = if (title.isNotBlank() && !title.contains("missed", ignoreCase = true)) {
+            title
+        } else if (text.isNotBlank() && !text.contains("missed", ignoreCase = true)) {
+            text
+        } else {
+            "Unknown Caller"
+        }
+
+        // Time-based deduplication to prevent floods (e.g. multiple callbacks in 1500 milliseconds)
+        val now = System.currentTimeMillis()
+        if (now - lastTriggerTime < 1500L && contactName == lastContactName) {
+            Log.d("NotificationListener", "Prevented flooding: duplicate missed call callback from $contactName within 1500ms")
+            return
+        }
+
+        // Deduplicate using notification key
         val key = sbn.key ?: "${packageName}_${notification.`when`}"
         if (handledNotificationKeys.contains(key)) {
-            Log.d("NotificationListener", "Skipping duplicated missed call notification: $key")
+            Log.d("NotificationListener", "Skipping duplicated notification key: $key")
             return
         }
 
@@ -50,7 +75,8 @@ class AgentNotificationListenerService : NotificationListenerService() {
             handledNotificationKeys.poll()
         }
 
-        val contactName = if (title.isNotBlank()) title else if (text.isNotBlank()) text else "Unknown Caller"
+        lastTriggerTime = now
+        lastContactName = contactName
 
         Log.d("NotificationListener", "Validated Missed Call from contact: $contactName (Package: $packageName, Key: $key)")
 
