@@ -62,6 +62,19 @@ object PermissionUtils {
     }
 
     /**
+     * Launches the system settings app info details screen for our package,
+     * which allows users to enable Restricted Settings (3 dots menu at top right)
+     * on Android 13+ in order to make Accessibility Service toggles available.
+     */
+    fun openAppInfoSettings(context: Context) {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = android.net.Uri.parse("package:${context.packageName}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }
+
+    /**
      * Checks if the app can draw custom overlays on other applications.
      */
     fun isOverlayPermissionGranted(context: Context): Boolean {

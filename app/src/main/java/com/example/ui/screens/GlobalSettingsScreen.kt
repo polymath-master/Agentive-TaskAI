@@ -451,31 +451,119 @@ fun GlobalSettingsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // Card for Accessibility Service
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .padding(vertical = 6.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "WhatsApp Accessibility Companion",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                if (isAccessibilityEnabled) "✅ Authorized & Listening" else "❌ Unauthorized. Tap configure.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (isAccessibilityEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                            )
-                        }
-                        Button(
-                            onClick = {
-                                PermissionUtils.openAccessibilitySettings(context)
-                            }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Configure")
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "WhatsApp Accessibility Companion",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    if (isAccessibilityEnabled) "✅ Authorized & Listening" else "❌ Unauthorized / Restricted Settings",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isAccessibilityEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    PermissionUtils.openAccessibilitySettings(context)
+                                }
+                            ) {
+                                Text("Configure")
+                            }
+                        }
+
+                        if (!isAccessibilityEnabled) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
+                                ),
+                                border = CardDefaults.outlinedCardBorder()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(bottom = 6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Help,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Android 13+ / Sideloaded App Notice",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                    }
+
+                                    Text(
+                                        text = "On newer Android versions, when you install/debug apps directly (sideloading), Android restricts accessibility services by showing 'Restricted Setting' or hiding the service entirely.\n\n" +
+                                                "To unlock this setting, follow these quick steps:",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(
+                                            text = "1. Click the 'Unlock Blocked Settings' button below.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = "2. Tap the three dots (⋮) at the top-right of that screen.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = "3. Tap 'Allow restricted settings' and authenticate.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = "4. Go back and click 'Configure' to toggle the service.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            PermissionUtils.openAppInfoSettings(context)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            contentColor = MaterialTheme.colorScheme.error
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Settings,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Unlock Blocked Settings")
+                                    }
+                                }
+                            }
                         }
                     }
 
