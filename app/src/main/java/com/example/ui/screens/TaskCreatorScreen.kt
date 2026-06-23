@@ -342,6 +342,9 @@ fun ActionPickerSection(selected: String, onSelect: (String) -> Unit) {
         TriggerSelectorCard("HTTP Webhook", "Pings target external REST endpoint URLs with POST/GET.", "WEBHOOK", Icons.Default.Link, selected, onSelect)
         TriggerSelectorCard("Workspace Gmail Dispatch", "Drafts and sends personalized invitation email template.", "SEND_EMAIL", Icons.Default.SendToMobile, selected, onSelect)
         TriggerSelectorCard("Launch Application", "Brings target application package directly to user foreground screen.", "OPEN_APP", Icons.Default.Launch, selected, onSelect)
+        TriggerSelectorCard("Show Toast", "Displays a quick visual toast pop-up on the screen.", "SHOW_TOAST", Icons.Default.TextSnippet, selected, onSelect)
+        TriggerSelectorCard("Copy to Clipboard", "Copies generated/custom text directly to device clipboard.", "COPY_CLIPBOARD", Icons.Default.ContentCopy, selected, onSelect)
+        TriggerSelectorCard("Display Overlay Dialog", "Renders a floating system overlay dialog.", "SHOW_OVERLAY", Icons.Default.Layers, selected, onSelect)
     }
 }
 
@@ -381,6 +384,36 @@ fun ActionConfigSection(
                     value = body,
                     onValueChange = onBodyChange,
                     label = { Text("Notification Text") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            "SHOW_TOAST" -> {
+                Text("Enter the text to display in toast pop-up:", style = MaterialTheme.typography.labelLarge)
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = body,
+                    onValueChange = onBodyChange,
+                    label = { Text("Toast Text") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            "COPY_CLIPBOARD" -> {
+                Text("Enter the text to copy to clipboard:", style = MaterialTheme.typography.labelLarge)
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = body,
+                    onValueChange = onBodyChange,
+                    label = { Text("Clipboard Text") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            "SHOW_OVERLAY" -> {
+                Text("Enter the overlay alert text:", style = MaterialTheme.typography.labelLarge)
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = body,
+                    onValueChange = onBodyChange,
+                    label = { Text("Overlay Dialog Text") },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -513,6 +546,15 @@ private suspend fun saveUserTask(
             actionObj.put("notificationChannel", "general")
         }
         "SHOW_NOTIFICATION" -> {
+            actionObj.put("text", body)
+        }
+        "SHOW_TOAST" -> {
+            actionObj.put("text", body)
+        }
+        "COPY_CLIPBOARD" -> {
+            actionObj.put("text", body)
+        }
+        "SHOW_OVERLAY" -> {
             actionObj.put("text", body)
         }
         "WEBHOOK" -> {

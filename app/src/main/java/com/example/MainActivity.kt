@@ -21,6 +21,7 @@ import com.example.ui.screens.HistoryLogsScreen
 import com.example.ui.screens.TaskCreatorScreen
 import com.example.ui.screens.TaskSettingsScreen
 import com.example.ui.screens.GlobalSettingsScreen
+import com.example.ui.screens.AgentDetailScreen
 import com.example.ui.theme.MyApplicationTheme
 
 enum class Screen {
@@ -28,7 +29,8 @@ enum class Screen {
     SETTINGS,
     CREATOR,
     HISTORY,
-    GLOBAL_SETTINGS
+    GLOBAL_SETTINGS,
+    AGENT_DETAIL
 }
 
 class MainActivity : ComponentActivity() {
@@ -122,7 +124,7 @@ class MainActivity : ComponentActivity() {
                                 preferencesManager = preferencesManager,
                                 onNavigateToSettings = { taskId ->
                                     selectedTaskId = taskId
-                                    currentScreen = Screen.SETTINGS
+                                    currentScreen = Screen.AGENT_DETAIL
                                 },
                                 onNavigateToCreator = {
                                     currentScreen = Screen.CREATOR
@@ -142,12 +144,23 @@ class MainActivity : ComponentActivity() {
                                 TaskSettingsScreen(
                                     task = activeTask,
                                     preferencesManager = preferencesManager,
-                                    onBack = { currentScreen = Screen.DASHBOARD },
+                                    onBack = { currentScreen = Screen.AGENT_DETAIL },
                                     onNavigateToGlobalSettings = { currentScreen = Screen.GLOBAL_SETTINGS }
                                 )
                             } else {
                                 currentScreen = Screen.DASHBOARD
                             }
+                        }
+
+                        Screen.AGENT_DETAIL -> {
+                            val taskId = selectedTaskId ?: "news"
+                            AgentDetailScreen(
+                                taskId = taskId,
+                                database = database,
+                                preferencesManager = preferencesManager,
+                                onBack = { currentScreen = Screen.DASHBOARD },
+                                onNavigateToSettings = { currentScreen = Screen.SETTINGS }
+                            )
                         }
 
                         Screen.CREATOR -> {

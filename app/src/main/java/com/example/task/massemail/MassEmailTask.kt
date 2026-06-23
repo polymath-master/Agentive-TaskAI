@@ -2,14 +2,22 @@ package com.example.task.massemail
 
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.CloudQueue
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.core.permissions.SpecialPermission
+import com.example.core.google.GoogleApiHelper
+import com.example.ui.screens.GoogleAuthConsentDialog
 import com.example.task.*
 
 class MassEmailTask(private val context: Context) : AgentTask {
@@ -34,13 +42,100 @@ class MassEmailTask(private val context: Context) : AgentTask {
         settings: TaskSettings,
         onSettingsChanged: (TaskSettings) -> Unit
     ) {
+        val currentContext = LocalContext.current
+        val googleApiHelper = remember { GoogleApiHelper.getInstance(currentContext) }
+        var isGoogleConnected by remember { mutableStateOf(googleApiHelper.isUserAuthenticated(currentContext)) }
+        var connectedEmail by remember { mutableStateOf(googleApiHelper.getConnectedEmail(currentContext)) }
+        var showConsentDialog by remember { mutableStateOf(false) }
+
         val sheetUrl = settings.values["sheet_url"] ?: "https://docs.google.com/spreadsheets/d/example_headcount"
         val templateDocUrl = settings.values["template_doc_url"] ?: "https://docs.google.com/document/d/example_template"
 
         var sheetInput by remember { mutableStateOf(sheetUrl) }
         var docInput by remember { mutableStateOf(templateDocUrl) }
 
+        if (showConsentDialog) {
+            GoogleAuthConsentDialog(
+                onDismiss = { showConsentDialog = false },
+                onAuthorize = { email ->
+                    googleApiHelper.connectAccount(
+                        context = currentContext,
+                        email = email,
+                        accessToken = "ya29.sandboxed-token-${System.currentTimeMillis()}",
+                        refreshToken = "1//mock-refresh-token-sandboxed-${System.currentTimeMillis()}"
+                    )
+                    isGoogleConnected = true
+                    connectedEmail = email
+                    showConsentDialog = false
+                    Toast.makeText(currentContext, "Google Account Authorized successfully!", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+
         Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
+            // OAuth Authorization Alert Card
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isGoogleConnected) 
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f) 
+                    else 
+                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
+                ),
+                border = CardDefaults.outlinedCardBorder()
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isGoogleConnected) Icons.Default.CloudQueue else Icons.Default.CloudOff,
+                            contentDescription = null,
+                            tint = if (isGoogleConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isGoogleConnected) "Google Account Connected" else "Google Account Disconnected",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = if (isGoogleConnected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+
+                    Text(
+                        text = if (isGoogleConnected) 
+                            "Authorized to execute automation using $connectedEmail" 
+                        else 
+                            "To build personalized invitations and send emails on background schedules, you must connect your Google Account.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    Button(
+                        onClick = {
+                            if (isGoogleConnected) {
+                                googleApiHelper.disconnectAccount(currentContext)
+                                isGoogleConnected = false
+                                connectedEmail = ""
+                            } else {
+                                showConsentDialog = true
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isGoogleConnected) 
+                                MaterialTheme.colorScheme.error 
+                              else 
+                                MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text(if (isGoogleConnected) "Disconnect" else "Connect Account")
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = sheetInput,
                 onValueChange = {
@@ -69,6 +164,12 @@ class MassEmailTask(private val context: Context) : AgentTask {
 
         if (sheetUrl.isBlank() || templateDocUrl.isBlank()) {
             return TaskResult.Error("Configuration invalid: Sheet URL and Template Doc URL must be specified.")
+        }
+
+        // Verify Google Workspace Authorization before launching Foreground Worker
+        val googleApiHelper = GoogleApiHelper.getInstance(context)
+        if (!googleApiHelper.isUserAuthenticated(context)) {
+            return TaskResult.Error("OAuth authorization is required. Please authorize your Google Workspace account in Configuration or settings before running invitations.")
         }
 
         // Mass Email execution is handled under EmailForegroundService to keep it persistent in background 

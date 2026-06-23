@@ -362,7 +362,7 @@ fun AgentInteractionCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
-            .clickable { isExpanded = !isExpanded },
+            .clickable { onConfigure() },
         colors = CardDefaults.cardColors(
             containerColor = if (isEnabled) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         ),

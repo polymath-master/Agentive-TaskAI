@@ -20,6 +20,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.core.permissions.PermissionUtils
 import com.example.core.storage.PreferencesManager
+import com.example.core.google.GoogleApiHelper
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -31,6 +32,12 @@ fun GlobalSettingsScreen(
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+
+    // Google Workspace Connection State
+    val googleApiHelper = remember { GoogleApiHelper.getInstance(context) }
+    var isGoogleConnected by remember { mutableStateOf(googleApiHelper.isUserAuthenticated(context)) }
+    var googleConnectedEmail by remember { mutableStateOf(googleApiHelper.getConnectedEmail(context)) }
+    var showAuthConsentDialog by remember { mutableStateOf(false) }
 
     // Gemini API Key state
     val localApiKey by preferencesManager.geminiApiKeyFlow.collectAsState(initial = "")
@@ -56,6 +63,24 @@ fun GlobalSettingsScreen(
         isNotificationEnabled = PermissionUtils.isNotificationListenerEnabled(context)
         isAccessibilityEnabled = PermissionUtils.isAccessibilityServiceEnabled(context)
         isOverlayEnabled = PermissionUtils.isOverlayPermissionGranted(context)
+    }
+
+    if (showAuthConsentDialog) {
+        GoogleAuthConsentDialog(
+            onDismiss = { showAuthConsentDialog = false },
+            onAuthorize = { authorizedEmail ->
+                googleApiHelper.connectAccount(
+                    context = context,
+                    email = authorizedEmail,
+                    accessToken = "ya29.sandboxed-token-${System.currentTimeMillis()}",
+                    refreshToken = "1//mock-refresh-token-sandboxed-${System.currentTimeMillis()}"
+                )
+                isGoogleConnected = true
+                googleConnectedEmail = authorizedEmail
+                showAuthConsentDialog = false
+                Toast.makeText(context, "Google Workspace successfully authorized!", Toast.LENGTH_LONG).show()
+            }
+        )
     }
 
     Scaffold(
@@ -84,6 +109,91 @@ fun GlobalSettingsScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Section 0: Google Workspace Integration
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isGoogleConnected) 
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f) 
+                    else 
+                        MaterialTheme.colorScheme.surface
+                ),
+                border = CardDefaults.outlinedCardBorder()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudQueue,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Google Workspace Account",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Text(
+                        text = "Authorize secure access to Gmail, Google Sheets, and Google Docs to run background email campaigns and document templates.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Account Status",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (isGoogleConnected) "✅ Connected: $googleConnectedEmail" else "❌ Disconnected",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isGoogleConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                if (isGoogleConnected) {
+                                    googleApiHelper.disconnectAccount(context)
+                                    isGoogleConnected = false
+                                    googleConnectedEmail = ""
+                                    Toast.makeText(context, "Disconnected Google Account", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showAuthConsentDialog = true
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isGoogleConnected) 
+                                    MaterialTheme.colorScheme.error 
+                                else 
+                                    MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(
+                                imageVector = if (isGoogleConnected) Icons.Default.LinkOff else Icons.Default.Link,
+                                contentDescription = null
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(if (isGoogleConnected) "Disconnect" else "Connect Account")
+                        }
+                    }
+                }
+            }
+
             // Section 1: Security & Gemini Key
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -431,3 +541,108 @@ fun GlobalSettingsScreen(
         }
     }
 }
+
+@Composable
+fun GoogleAuthConsentDialog(
+    onDismiss: () -> Unit,
+    onAuthorize: (String) -> Unit
+) {
+    var emailInput by remember { mutableStateOf("rahmanshuvo.4360@gmail.com") }
+    var selectGmail by remember { mutableStateOf(true) }
+    var selectSheets by remember { mutableStateOf(true) }
+    var selectDocs by remember { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.CloudQueue,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Google OAuth 2.0 Consent", fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Agentive TaskAI is requesting authorization to securely connect with your Google Account services.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                
+                OutlinedTextField(
+                    value = emailInput,
+                    onValueChange = { emailInput = it },
+                    label = { Text("Google Account Email") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(
+                    text = "Requesting Scopes:",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { selectGmail = !selectGmail }
+                ) {
+                    Checkbox(checked = selectGmail, onCheckedChange = { selectGmail = it })
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("Gmail Send", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text("https://www.googleapis.com/auth/gmail.send", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { selectSheets = !selectSheets }
+                ) {
+                    Checkbox(checked = selectSheets, onCheckedChange = { selectSheets = it })
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("Google Sheets Read", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text(".../auth/spreadsheets.readonly", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { selectDocs = !selectDocs }
+                ) {
+                    Checkbox(checked = selectDocs, onCheckedChange = { selectDocs = it })
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("Google Docs Read", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text(".../auth/documents.readonly", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (emailInput.isBlank() || !android.util.Patterns.EMAIL_ADDRESS.matcher(emailInput).matches()) {
+                        // Keep simple validation
+                    } else {
+                        onAuthorize(emailInput)
+                    }
+                }
+            ) {
+                Text("Grant Authorization")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+

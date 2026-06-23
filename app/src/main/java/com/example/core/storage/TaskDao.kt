@@ -39,6 +39,9 @@ interface TaskDao {
     @Query("SELECT * FROM task_history ORDER BY timestamp DESC LIMIT 100")
     fun getAllHistoryFlow(): Flow<List<TaskHistory>>
 
+    @Query("SELECT * FROM task_history WHERE taskId = :taskId ORDER BY timestamp DESC LIMIT 50")
+    fun getHistoryByTaskIdFlow(taskId: String): Flow<List<TaskHistory>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHistory(history: TaskHistory)
 

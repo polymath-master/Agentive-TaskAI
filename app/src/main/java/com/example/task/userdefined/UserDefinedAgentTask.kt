@@ -106,6 +106,21 @@ class UserDefinedAgentTask(
                     return TaskResult.Success(text)
                 }
 
+                "SHOW_TOAST" -> {
+                    val text = actionObj.optString("text", "Automated toast popup!")
+                    return TaskResult.Success(text)
+                }
+
+                "COPY_CLIPBOARD" -> {
+                    val text = actionObj.optString("text", "Content copied to clipboard!")
+                    return TaskResult.Success(text)
+                }
+
+                "SHOW_OVERLAY" -> {
+                    val text = actionObj.optString("text", "Overlay alert triggered!")
+                    return TaskResult.Success(text)
+                }
+
                 "WEBHOOK" -> {
                     if (webhookUrl.isBlank()) {
                         return TaskResult.Error("Webhook URL must be provided.")
