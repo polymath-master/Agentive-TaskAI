@@ -14,17 +14,56 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.example.MainActivity
+import com.example.core.storage.PreferencesManager
+import com.example.core.storage.AppDatabase
+import kotlinx.coroutines.flow.first
+import androidx.glance.appwidget.updateAll
+
+suspend fun updateWidget(context: Context) {
+    try {
+        AgentiveWidget().updateAll(context)
+    } catch (e: Exception) {
+        android.util.Log.e("AgentiveWidget", "Failed to update widget: ${e.message}")
+    }
+}
 
 class AgentiveWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val prefs = PreferencesManager(context)
+        val newsEnabled = prefs.isTaskEnabledFlow("news").first()
+        val callReminderEnabled = prefs.isTaskEnabledFlow("callreminder").first()
+        val massEmailEnabled = prefs.isTaskEnabledFlow("massemail").first()
+        val whatsappEnabled = prefs.isTaskEnabledFlow("whatsapp").first()
+
+        val db = AppDatabase.getDatabase(context)
+        val customCount = try {
+            db.taskDao().getAllUserTasks().size
+        } catch (e: Exception) {
+            0
+        }
+
         provideContent {
-            WidgetContent(context)
+            WidgetContent(
+                context,
+                newsEnabled,
+                callReminderEnabled,
+                massEmailEnabled,
+                whatsappEnabled,
+                customCount
+            )
         }
     }
 
     @Composable
-    private fun WidgetContent(context: Context) {
+    private fun WidgetContent(
+        context: Context,
+        newsEnabled: Boolean,
+        callReminderEnabled: Boolean,
+        massEmailEnabled: Boolean,
+        whatsappEnabled: Boolean,
+        customCount: Int
+    ) {
         Column(
             modifier = GlanceModifier
                 .fillMaxSize()
@@ -47,9 +86,11 @@ class AgentiveWidget : GlanceAppWidget() {
 
             // Task list summaries
             Column(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
-                TaskInfoRow(title = "📰 News Brief", status = "Daily 11:00 AM • ACTIVE")
-                TaskInfoRow(title = "📞 Missed Call", status = "Immediate callback • READY")
-                TaskInfoRow(title = "✉️ Mass Email", status = "Spreading invitations • IDLE")
+                TaskInfoRow(title = "📰 News Brief", status = if (newsEnabled) "ACTIVE (11 AM)" else "HALTED")
+                TaskInfoRow(title = "📞 Missed Call", status = if (callReminderEnabled) "ACTIVE (Call)" else "HALTED")
+                TaskInfoRow(title = "✉️ Mass Email", status = if (massEmailEnabled) "ACTIVE (Email)" else "HALTED")
+                TaskInfoRow(title = "💬 WhatsApp", status = if (whatsappEnabled) "ACTIVE (AI)" else "HALTED")
+                TaskInfoRow(title = "🔮 Custom Tasks", status = "$customCount schemas active")
             }
 
             // Quick Actions segment
@@ -58,12 +99,7 @@ class AgentiveWidget : GlanceAppWidget() {
                 horizontalAlignment = Alignment.Horizontal.End
             ) {
                 Button(
-                    text = "Run News",
-                    onClick = actionStartActivity<MainActivity>()
-                )
-                Spacer(modifier = GlanceModifier.width(8.dp))
-                Button(
-                    text = "Create Task +",
+                    text = "Open Dashboard",
                     onClick = actionStartActivity<MainActivity>()
                 )
             }

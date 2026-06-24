@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -32,6 +33,7 @@ fun TaskCreatorScreen(
     onTaskCreated: () -> Unit,
     onCancel: () -> Unit
 ) {
+    val context = LocalContext.current
     var currentStep by remember { mutableStateOf(1) }
     BackHandler {
         if (currentStep > 1) {
@@ -191,6 +193,9 @@ fun TaskCreatorScreen(
                                     targetPkg = actionTargetPackage,
                                     onComplete = {
                                         coroutineScope.launch(Dispatchers.Main) {
+                                            try {
+                                                com.example.widget.updateWidget(context)
+                                            } catch (e: Exception) {}
                                             onTaskCreated()
                                         }
                                     }

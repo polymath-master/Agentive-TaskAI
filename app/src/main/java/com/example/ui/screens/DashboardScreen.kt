@@ -24,6 +24,7 @@ import com.example.core.storage.TaskHistory
 import com.example.task.*
 import com.example.task.userdefined.UserDefinedAgentTask
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -257,6 +258,7 @@ fun DashboardScreen(
                             CategoryDivider(category)
                         }
                         items(filtered) { agent ->
+                            val isUserDefined = agent.metadata.id.startsWith("user_")
                             AgentInteractionCard(
                                 agent = agent,
                                 preferencesManager = preferencesManager,
@@ -267,7 +269,17 @@ fun DashboardScreen(
                                         // Dynamic variable loading
                                         val runResult = withContext(Dispatchers.IO) {
                                             try {
-                                                agent.execute(context, TaskSettings())
+                                                val pm = preferencesManager
+                                                val vals = mapOf(
+                                                    "schedule_time" to pm.newsScheduleTimeFlow.first(),
+                                                    "reminder_delay_minutes" to pm.reminderDelayMinutesFlow.first().toString(),
+                                                    "whatsapp_response_tone" to pm.whatsappResponseToneFlow.first(),
+                                                    "gmail_user_email" to pm.gmailUserEmailFlow.first(),
+                                                    "sheet_url" to pm.sheetUrlFlow.first(),
+                                                    "template_doc_url" to pm.templateDocUrlFlow.first(),
+                                                    "contact_name" to pm.lastMissedCallContactFlow.first()
+                                                )
+                                                agent.execute(context, TaskSettings(vals))
                                             } catch (e: Exception) {
                                                 TaskResult.Error(e.localizedMessage ?: "execution error")
                                             }
@@ -301,7 +313,21 @@ fun DashboardScreen(
                                         }
                                     }
                                 },
-                                onConfigure = { onNavigateToSettings(agent.metadata.id) }
+                                onConfigure = { onNavigateToSettings(agent.metadata.id) },
+                                onDelete = if (isUserDefined) {
+                                    {
+                                        coroutineScope.launch {
+                                            agent.cancel(context)
+                                            withContext(Dispatchers.IO) {
+                                                database.taskDao().deleteUserTaskById(agent.metadata.id)
+                                            }
+                                            Toast.makeText(context, "Agent deleted successfully.", Toast.LENGTH_SHORT).show()
+                                            try {
+                                                com.example.widget.updateWidget(context)
+                                            } catch (e: Exception) {}
+                                        }
+                                    }
+                                } else null
                             )
                         }
                     }
@@ -345,7 +371,8 @@ fun AgentInteractionCard(
     preferencesManager: PreferencesManager,
     isRunning: Boolean,
     onRunNow: () -> Unit,
-    onConfigure: () -> Unit
+    onConfigure: () -> Unit,
+    onDelete: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -362,7 +389,7 @@ fun AgentInteractionCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
-            .clickable { onConfigure() },
+            .clickable { isExpanded = !isExpanded },
         colors = CardDefaults.cardColors(
             containerColor = if (isEnabled) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         ),
@@ -392,21 +419,34 @@ fun AgentInteractionCard(
                     }
                 }
 
-                // Switch
-                Switch(
-                    checked = isEnabled,
-                    onCheckedChange = {
-                        isEnabled = it
-                        coroutineScope.launch {
-                            preferencesManager.setTaskEnabled(agent.metadata.id, it)
-                            if (it) {
-                                agent.schedule(context, TaskSettings())
-                            } else {
-                                agent.cancel(context)
-                            }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (onDelete != null) {
+                        IconButton(onClick = onDelete) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete Agent",
+                                tint = MaterialTheme.colorScheme.error
+                            )
                         }
                     }
-                )
+                    Switch(
+                        checked = isEnabled,
+                        onCheckedChange = {
+                            isEnabled = it
+                            coroutineScope.launch {
+                                preferencesManager.setTaskEnabled(agent.metadata.id, it)
+                                if (it) {
+                                    agent.schedule(context, TaskSettings())
+                                } else {
+                                    agent.cancel(context)
+                                }
+                                try {
+                                    com.example.widget.updateWidget(context)
+                                } catch (e: Exception) {}
+                            }
+                        }
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))

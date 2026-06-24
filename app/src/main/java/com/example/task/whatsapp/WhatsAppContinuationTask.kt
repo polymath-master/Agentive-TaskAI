@@ -37,7 +37,7 @@ class WhatsAppContinuationTask(private val context: Context) : AgentTask {
         val tones = listOf("Professional", "Casual", "Friendly", "Concise")
         
         var toneExpanded by remember { mutableStateOf(false) }
-        var currentTone by remember { mutableStateOf(selectedTone) }
+        var currentTone by remember(selectedTone) { mutableStateOf(selectedTone) }
 
         Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
             Text(

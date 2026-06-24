@@ -20,6 +20,8 @@ class PreferencesManager(private val context: Context) {
         val GMAIL_USER_EMAIL_KEY = stringPreferencesKey("gmail_user_email")
         val RSS_FEEDS_KEY = stringSetPreferencesKey("rss_feeds")
         val LAST_MISSED_CALL_CONTACT_KEY = stringPreferencesKey("last_missed_call_contact")
+        val SHEET_URL_KEY = stringPreferencesKey("sheet_url")
+        val TEMPLATE_DOC_URL_KEY = stringPreferencesKey("template_doc_url")
         val DEFAULT_FEEDS = setOf(
             "https://www.prothomalo.com/feed",
             "https://www.thedailystar.net/frontpage/rss.xml",
@@ -52,6 +54,14 @@ class PreferencesManager(private val context: Context) {
 
     val gmailUserEmailFlow: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[GMAIL_USER_EMAIL_KEY] ?: "user@gmail.com"
+    }
+
+    val sheetUrlFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[SHEET_URL_KEY] ?: "https://docs.google.com/spreadsheets/d/example_headcount"
+    }
+
+    val templateDocUrlFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[TEMPLATE_DOC_URL_KEY] ?: "https://docs.google.com/document/d/example_template"
     }
 
     fun isTaskEnabledFlow(taskId: String): Flow<Boolean> {
@@ -93,6 +103,18 @@ class PreferencesManager(private val context: Context) {
     suspend fun saveGmailUserEmail(email: String) {
         context.dataStore.edit { prefs ->
             prefs[GMAIL_USER_EMAIL_KEY] = email
+        }
+    }
+
+    suspend fun saveSheetUrl(url: String) {
+        context.dataStore.edit { prefs ->
+            prefs[SHEET_URL_KEY] = url
+        }
+    }
+
+    suspend fun saveTemplateDocUrl(url: String) {
+        context.dataStore.edit { prefs ->
+            prefs[TEMPLATE_DOC_URL_KEY] = url
         }
     }
 

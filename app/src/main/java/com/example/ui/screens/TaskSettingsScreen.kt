@@ -22,6 +22,7 @@ import com.example.core.storage.PreferencesManager
 import com.example.core.ui.PermissionGate
 import com.example.task.AgentTask
 import com.example.task.TaskSettings
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
@@ -42,18 +43,18 @@ fun TaskSettingsScreen(
 
     // Read stored preferences at screen startup
     LaunchedEffect(task.metadata.id) {
-        preferencesManager.isTaskEnabledFlow(task.metadata.id).collect {
-            isEnabled = it
-        }
+        isEnabled = preferencesManager.isTaskEnabledFlow(task.metadata.id).first()
     }
 
     LaunchedEffect(task.metadata.id) {
         // Hydrate settings keys from local DataStore caches
         val hValues = mutableMapOf<String, String>()
-        preferencesManager.newsScheduleTimeFlow.collect { hValues["schedule_time"] = it }
-        preferencesManager.reminderDelayMinutesFlow.collect { hValues["reminder_delay_minutes"] = it.toString() }
-        preferencesManager.whatsappResponseToneFlow.collect { hValues["whatsapp_response_tone"] = it }
-        preferencesManager.gmailUserEmailFlow.collect { hValues["gmail_user_email"] = it }
+        hValues["schedule_time"] = preferencesManager.newsScheduleTimeFlow.first()
+        hValues["reminder_delay_minutes"] = preferencesManager.reminderDelayMinutesFlow.first().toString()
+        hValues["whatsapp_response_tone"] = preferencesManager.whatsappResponseToneFlow.first()
+        hValues["gmail_user_email"] = preferencesManager.gmailUserEmailFlow.first()
+        hValues["sheet_url"] = preferencesManager.sheetUrlFlow.first()
+        hValues["template_doc_url"] = preferencesManager.templateDocUrlFlow.first()
         currentSettings = TaskSettings(hValues)
     }
 
@@ -154,7 +155,9 @@ fun TaskSettingsScreen(
                         Text("Task Configurations", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
                         task.ConfigurationScreen(
                             settings = currentSettings,
-                            onSettingsChanged = { updated -> currentSettings = updated }
+                            onSettingsChanged = { updated -> 
+                                currentSettings = TaskSettings(currentSettings.values + updated.values)
+                            }
                         )
                     }
                 }
@@ -189,8 +192,13 @@ fun TaskSettingsScreen(
                                 "reminder_delay_minutes" -> value.toIntOrNull()?.let { preferencesManager.saveReminderDelayMinutes(it) }
                                 "whatsapp_response_tone" -> preferencesManager.saveWhatsappResponseTone(value)
                                 "gmail_user_email" -> preferencesManager.saveGmailUserEmail(value)
+                                "sheet_url" -> preferencesManager.saveSheetUrl(value)
+                                "template_doc_url" -> preferencesManager.saveTemplateDocUrl(value)
                             }
                         }
+
+                        // Also persist task enabled preference state explicitly
+                        preferencesManager.setTaskEnabled(task.metadata.id, isEnabled)
 
                         // Schedule or Cancel the WorkManager operations based on active flag
                         if (isEnabled) {
@@ -200,11 +208,21 @@ fun TaskSettingsScreen(
                                 showPermissionGate = true
                             } else {
                                 task.schedule(context, currentSettings)
+                                try {
+                                    com.example.widget.updateWidget(context)
+                                } catch (e: Exception) {
+                                    // Safeguard widget update
+                                }
                                 Toast.makeText(context, "${task.metadata.name} configured & scheduled!", Toast.LENGTH_SHORT).show()
                                 onBack()
                             }
                         } else {
                             task.cancel(context)
+                            try {
+                                com.example.widget.updateWidget(context)
+                            } catch (e: Exception) {
+                                // Safeguard widget update
+                            }
                             Toast.makeText(context, "Schedules halted.", Toast.LENGTH_SHORT).show()
                             onBack()
                         }

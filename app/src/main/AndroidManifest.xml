@@ -34,6 +34,7 @@
             android:name="com.example.core.permissions.AgentNotificationListenerService"
             android:label="TaskAI Notification Listener"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:enabled="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
@@ -45,6 +46,8 @@
             android:name="com.example.core.permissions.AgentAccessibilityService"
             android:label="TaskAI WhatsApp Assistant Service"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:enabled="true"
+            android:description="@string/accessibility_service_description"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.view.accessibility.AccessibilityService" />

@@ -45,7 +45,7 @@ class NewsTask(private val context: Context) : AgentTask {
         val activeFeeds by preferencesManager.rssFeedsFlow.collectAsState(initial = emptySet())
         val scheduleTime = settings.values["schedule_time"] ?: "11:00"
 
-        var scheduleInput by remember { mutableStateOf(scheduleTime) }
+        var scheduleInput by remember(scheduleTime) { mutableStateOf(scheduleTime) }
 
         Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
             Text(

@@ -32,7 +32,7 @@ class CallReminderTask(private val context: Context) : AgentTask {
         onSettingsChanged: (TaskSettings) -> Unit
     ) {
         val defaultMinutes = settings.values["reminder_delay_minutes"] ?: "30"
-        var delayInput by remember { mutableStateOf(defaultMinutes) }
+        var delayInput by remember(defaultMinutes) { mutableStateOf(defaultMinutes) }
 
         Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
             Text(

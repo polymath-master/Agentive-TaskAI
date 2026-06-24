@@ -60,6 +60,13 @@ class AgentRunner(private val context: Context) {
                 Log.e("AgentRunner", errorMsg)
                 return@withContext TaskResult.Error(errorMsg)
             }
+            val preferencesManager = com.example.core.storage.PreferencesManager(context)
+            val isEnabled = preferencesManager.isTaskEnabledFlow(taskId).first()
+            if (!isEnabled) {
+                val skipMsg = "Built-in task $taskId is disabled. Skipping execution."
+                Log.d("AgentRunner", skipMsg)
+                return@withContext TaskResult.Cancelled
+            }
             taskName = builtIn.metadata.name
             agentTask = builtIn
         }
@@ -91,7 +98,17 @@ class AgentRunner(private val context: Context) {
         }
 
         // 2. Execute Task
-        val settings = TaskSettings() // Settings are collected from DB inside agents if needed
+        val pm = com.example.core.storage.PreferencesManager(context)
+        val vals = mapOf(
+            "schedule_time" to pm.newsScheduleTimeFlow.first(),
+            "reminder_delay_minutes" to pm.reminderDelayMinutesFlow.first().toString(),
+            "whatsapp_response_tone" to pm.whatsappResponseToneFlow.first(),
+            "gmail_user_email" to pm.gmailUserEmailFlow.first(),
+            "sheet_url" to pm.sheetUrlFlow.first(),
+            "template_doc_url" to pm.templateDocUrlFlow.first(),
+            "contact_name" to pm.lastMissedCallContactFlow.first()
+        )
+        val settings = TaskSettings(vals)
         val result = try {
             agentTask.execute(context, settings)
         } catch (e: Exception) {

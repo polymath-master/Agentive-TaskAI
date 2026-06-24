@@ -51,8 +51,8 @@ class MassEmailTask(private val context: Context) : AgentTask {
         val sheetUrl = settings.values["sheet_url"] ?: "https://docs.google.com/spreadsheets/d/example_headcount"
         val templateDocUrl = settings.values["template_doc_url"] ?: "https://docs.google.com/document/d/example_template"
 
-        var sheetInput by remember { mutableStateOf(sheetUrl) }
-        var docInput by remember { mutableStateOf(templateDocUrl) }
+        var sheetInput by remember(sheetUrl) { mutableStateOf(sheetUrl) }
+        var docInput by remember(templateDocUrl) { mutableStateOf(templateDocUrl) }
 
         if (showConsentDialog) {
             GoogleAuthConsentDialog(
@@ -195,5 +195,7 @@ class MassEmailTask(private val context: Context) : AgentTask {
     override fun cancel(context: Context) {
         val serviceIntent = Intent(context, EmailForegroundService::class.java)
         context.stopService(serviceIntent)
+        val scheduler = com.example.core.scheduler.TaskScheduler(context)
+        scheduler.cancelAll("massemail")
     }
 }
