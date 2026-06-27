@@ -25,7 +25,11 @@ class AgentTaskWorker(
         return when (runResult) {
             is TaskResult.Success -> Result.success()
             is TaskResult.Cancelled -> Result.success() // cancel is considered finished
-            else -> Result.retry()
+            else -> {
+                // Return failure rather than retry to avoid continuous loop and prevent battery draining.
+                Log.w("AgentTaskWorker", "Task $taskId failed. Returning failure to prevent battery-draining retry loops.")
+                Result.failure()
+            }
         }
     }
 }

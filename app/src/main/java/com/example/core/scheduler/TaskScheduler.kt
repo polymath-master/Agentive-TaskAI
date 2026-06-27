@@ -39,6 +39,68 @@ class TaskScheduler(private val context: Context) {
         Log.d("TaskScheduler", "Scheduled periodic task: $taskId every $intervalHours hours")
     }
 
+    /**
+     * Schedules a daily periodic task to execute exactly at a specific target time (e.g. "11:00").
+     * Calculates the initial delay in minutes between current system time and the target time
+     * to avoid random immediate background runs and conserve battery.
+     */
+    fun schedulePeriodicAtSpecificTime(taskId: String, timeString: String) {
+        val delayMinutes = calculateInitialDelayMinutes(timeString)
+        val data = Data.Builder()
+            .putString("TASK_ID", taskId)
+            .build()
+
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        // Create a 24-hour periodic request with precise initial delay
+        val periodicRequest = PeriodicWorkRequestBuilder<AgentTaskWorker>(
+            24L, TimeUnit.HOURS,
+            15L, TimeUnit.MINUTES
+        )
+        .setInputData(data)
+        .setConstraints(constraints)
+        .setInitialDelay(delayMinutes, TimeUnit.MINUTES)
+        .addTag(taskId)
+        .addTag("AGENT_TASK")
+        .build()
+
+        workManager.enqueueUniquePeriodicWork(
+            "periodic_$taskId",
+            ExistingPeriodicWorkPolicy.UPDATE,
+            periodicRequest
+        )
+        Log.d("TaskScheduler", "Scheduled daily task '$taskId' at $timeString. Initial delay is $delayMinutes mins.")
+    }
+
+    private fun calculateInitialDelayMinutes(targetTime: String): Long {
+        try {
+            val parts = targetTime.trim().split(":")
+            if (parts.size != 2) return 0L
+            val hour = parts[0].toIntOrNull() ?: return 0L
+            val minute = parts[1].toIntOrNull() ?: return 0L
+
+            val now = java.util.Calendar.getInstance()
+            val target = java.util.Calendar.getInstance().apply {
+                set(java.util.Calendar.HOUR_OF_DAY, hour)
+                set(java.util.Calendar.MINUTE, minute)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }
+
+            if (target.before(now)) {
+                target.add(java.util.Calendar.DAY_OF_YEAR, 1)
+            }
+
+            val diffMs = target.timeInMillis - now.timeInMillis
+            return diffMs / (60 * 1000)
+        } catch (e: Exception) {
+            Log.e("TaskScheduler", "Error calculating initial delay for time: $targetTime", e)
+            return 0L
+        }
+    }
+
     fun scheduleOneShot(taskId: String, delayMinutes: Long) {
         val data = Data.Builder()
             .putString("TASK_ID", taskId)

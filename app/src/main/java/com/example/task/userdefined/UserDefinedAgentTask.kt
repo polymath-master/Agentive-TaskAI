@@ -175,13 +175,21 @@ class UserDefinedAgentTask(
                 val triggerObj = jsonRoot.getJSONObject("trigger")
                 val type = triggerObj.optString("type", "")
                 if (type == "SCHEDULE") {
-                    // Periodic scheduler configuration
-                    scheduler.schedulePeriodic(entity.id, 24) // Default daily
+                    val scheduleObj = triggerObj.optJSONObject("schedule")
+                    if (scheduleObj != null) {
+                        val hour = scheduleObj.optInt("hour", 12)
+                        val minute = scheduleObj.optInt("minute", 0)
+                        val formattedTime = String.format("%02d:%02d", hour, minute)
+                        // Run exactly at the user-defined specific trigger time for optimal efficiency
+                        scheduler.schedulePeriodicAtSpecificTime(entity.id, formattedTime)
+                    } else {
+                        scheduler.schedulePeriodicAtSpecificTime(entity.id, "12:00")
+                    }
                 }
             }
         } catch (e: Exception) {
-            // Schedule with default trigger
-            scheduler.schedulePeriodic(entity.id, 24)
+            // Schedule with default trigger at noon
+            scheduler.schedulePeriodicAtSpecificTime(entity.id, "12:00")
         }
     }
 

@@ -158,8 +158,9 @@ class NewsTask(private val context: Context) : AgentTask {
 
     override fun schedule(context: Context, settings: TaskSettings) {
         val scheduler = com.example.core.scheduler.TaskScheduler(context)
-        // Default interval is 24 hours
-        scheduler.schedulePeriodic("news", 24)
+        val targetTime = settings.values["schedule_time"] ?: "11:00"
+        // Run daily exactly at the user-specified schedule time to maximize battery savings
+        scheduler.schedulePeriodicAtSpecificTime("news", targetTime)
     }
 
     override fun cancel(context: Context) {
