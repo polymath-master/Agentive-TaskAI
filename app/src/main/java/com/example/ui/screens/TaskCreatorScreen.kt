@@ -30,6 +30,7 @@ import java.util.UUID
 @Composable
 fun TaskCreatorScreen(
     database: AppDatabase,
+    initialConfig: ParsedAgentConfig? = null,
     onTaskCreated: () -> Unit,
     onCancel: () -> Unit
 ) {
@@ -45,27 +46,36 @@ fun TaskCreatorScreen(
     val totalSteps = 6
 
     // Form inputs state
-    var selectedTrigger by remember { mutableStateOf("SCHEDULE") }
+    var selectedTrigger by remember { mutableStateOf(initialConfig?.triggerType ?: "SCHEDULE") }
     // Trigger params
-    var triggerHour by remember { mutableStateOf(12) }
-    var triggerMinute by remember { mutableStateOf(0) }
-    var selectedDays = remember { mutableStateListOf("MON", "TUE", "WED", "THU", "FRI") }
-    var notificationKeyword by remember { mutableStateOf("") }
+    var triggerHour by remember { mutableStateOf(initialConfig?.triggerParams?.get("hour") as? Int ?: 12) }
+    var triggerMinute by remember { mutableStateOf(initialConfig?.triggerParams?.get("minute") as? Int ?: 0) }
+    var selectedDays = remember {
+        val list = mutableStateListOf<String>()
+        val configDays = initialConfig?.triggerParams?.get("daysOfWeek") as? List<*>
+        if (configDays != null) {
+            configDays.forEach { list.add(it.toString()) }
+        } else {
+            list.addAll(listOf("MON", "TUE", "WED", "THU", "FRI"))
+        }
+        list
+    }
+    var notificationKeyword by remember { mutableStateOf(initialConfig?.triggerParams?.get("keyword") as? String ?: "") }
 
     // Condition state
-    var conditionWifiOnly by remember { mutableStateOf(false) }
+    var conditionWifiOnly by remember { mutableStateOf(initialConfig?.wifiOnly ?: false) }
 
     // Action state
-    var selectedAction by remember { mutableStateOf("AI_GENERATE_AND_NOTIFY") }
+    var selectedAction by remember { mutableStateOf(initialConfig?.actionType ?: "AI_GENERATE_AND_NOTIFY") }
     // Action params
-    var actionPrompt by remember { mutableStateOf("Generate an inspirational quote.") }
-    var actionBodyText by remember { mutableStateOf("Alarm fired successfully!") }
-    var actionRecipient by remember { mutableStateOf("mushfiq@aistudio.com") }
-    var actionWebhookUrl by remember { mutableStateOf("https://hook.example.com/automation") }
-    var actionTargetPackage by remember { mutableStateOf("com.android.settings") }
+    var actionPrompt by remember { mutableStateOf(initialConfig?.actionParams?.get("prompt") as? String ?: "Generate an inspirational quote.") }
+    var actionBodyText by remember { mutableStateOf(initialConfig?.actionParams?.get("text") as? String ?: "Alarm fired successfully!") }
+    var actionRecipient by remember { mutableStateOf(initialConfig?.actionParams?.get("recipient") as? String ?: "mushfiq@aistudio.com") }
+    var actionWebhookUrl by remember { mutableStateOf(initialConfig?.actionParams?.get("url") as? String ?: "https://hook.example.com/automation") }
+    var actionTargetPackage by remember { mutableStateOf(initialConfig?.actionParams?.get("package") as? String ?: "com.android.settings") }
 
     // Metadata state
-    var taskName by remember { mutableStateOf("Evening Quote of the Day") }
+    var taskName by remember { mutableStateOf(initialConfig?.name ?: "Evening Quote of the Day") }
 
     val coroutineScope = rememberCoroutineScope()
 

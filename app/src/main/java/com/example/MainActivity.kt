@@ -30,7 +30,8 @@ enum class Screen {
     CREATOR,
     HISTORY,
     GLOBAL_SETTINGS,
-    AGENT_DETAIL
+    AGENT_DETAIL,
+    CHAT_CREATOR
 }
 
 class MainActivity : ComponentActivity() {
@@ -60,6 +61,7 @@ class MainActivity : ComponentActivity() {
                     var currentScreen by remember { mutableStateOf(Screen.DASHBOARD) }
                     var selectedTaskId by remember { mutableStateOf<String?>("news") }
                     var customReminderContact by remember { mutableStateOf<String?>(null) }
+                    var activeWizardConfig by remember { mutableStateOf<com.example.ui.screens.ParsedAgentConfig?>(null) }
 
                     // Process incoming intent actions reactively
                     LaunchedEffect(intent) {
@@ -127,7 +129,8 @@ class MainActivity : ComponentActivity() {
                                     currentScreen = Screen.AGENT_DETAIL
                                 },
                                 onNavigateToCreator = {
-                                    currentScreen = Screen.CREATOR
+                                    activeWizardConfig = null
+                                    currentScreen = Screen.CHAT_CREATOR
                                 },
                                 onNavigateToHistory = {
                                     currentScreen = Screen.HISTORY
@@ -163,11 +166,24 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
+                        Screen.CHAT_CREATOR -> {
+                            com.example.ui.screens.AIChatCreatorScreen(
+                                database = database,
+                                onTaskCreated = { currentScreen = Screen.DASHBOARD },
+                                onOpenWizardWithConfig = { config ->
+                                    activeWizardConfig = config
+                                    currentScreen = Screen.CREATOR
+                                },
+                                onCancel = { currentScreen = Screen.DASHBOARD }
+                            )
+                        }
+
                         Screen.CREATOR -> {
                             TaskCreatorScreen(
                                 database = database,
+                                initialConfig = activeWizardConfig,
                                 onTaskCreated = { currentScreen = Screen.DASHBOARD },
-                                onCancel = { currentScreen = Screen.DASHBOARD }
+                                onCancel = { currentScreen = Screen.CHAT_CREATOR }
                             )
                         }
 
