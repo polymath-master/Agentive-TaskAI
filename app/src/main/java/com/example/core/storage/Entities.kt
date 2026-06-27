@@ -18,7 +18,9 @@ data class UserTaskEntity(
     @PrimaryKey val id: String,
     val name: String,
     val jsonDefinition: String,
-    val isEnabled: Boolean = true
+    val isEnabled: Boolean = true,
+    val chatHistoryJson: String = "[]",
+    val versionsJson: String = "[]"
 )
 
 @Entity(tableName = "task_history")

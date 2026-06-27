@@ -3,6 +3,7 @@ package com.example.ui.screens
 import androidx.activity.compose.BackHandler
 import android.util.Patterns
 import android.widget.Toast
+import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -20,13 +21,18 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.core.permissions.PermissionUtils
 import com.example.core.storage.PreferencesManager
+import com.example.core.storage.AppDatabase
+import com.example.core.storage.UserTaskEntity
 import com.example.core.google.GoogleApiHelper
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GlobalSettingsScreen(
     preferencesManager: PreferencesManager,
+    database: AppDatabase,
     onBack: () -> Unit
 ) {
     BackHandler(onBack = onBack)
@@ -746,6 +752,148 @@ fun GlobalSettingsScreen(
                     )
                 }
             }
+
+            // Section 4: Backup & Restore Utilities
+            var restorePayload by remember { mutableStateOf("") }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.outlinedCardBorder()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Backup,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Backup & Restore Agents",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Text(
+                        text = "Backup your configured automation agents to local storage or restore them from a previously exported backup payload.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                coroutineScope.launch {
+                                    val tasks = database.taskDao().getAllUserTasks()
+                                    if (tasks.isEmpty()) {
+                                        Toast.makeText(context, "No custom agents to backup!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        val backupArray = JSONArray()
+                                        tasks.forEach { task ->
+                                            val obj = JSONObject()
+                                            obj.put("id", task.id)
+                                            obj.put("name", task.name)
+                                            obj.put("jsonDefinition", task.jsonDefinition)
+                                            obj.put("isEnabled", task.isEnabled)
+                                            obj.put("chatHistoryJson", task.chatHistoryJson)
+                                            obj.put("versionsJson", task.versionsJson)
+                                            backupArray.put(obj)
+                                        }
+                                        val backupStr = backupArray.toString()
+                                        
+                                        // Copy to clipboard
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        val clip = android.content.ClipData.newPlainText("Agentive AI Backup", backupStr)
+                                        clipboard.setPrimaryClip(clip)
+                                        Toast.makeText(context, "Backup copied to clipboard! (Saved ${tasks.size} agents)", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Export Backup")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Restore from JSON payload:",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    OutlinedTextField(
+                        value = restorePayload,
+                        onValueChange = { restorePayload = it },
+                        placeholder = { Text("Paste JSON backup payload here...") },
+                        modifier = Modifier.fillMaxWidth().height(100.dp),
+                        textStyle = MaterialTheme.typography.bodySmall
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = {
+                            if (restorePayload.isBlank()) {
+                                Toast.makeText(context, "Please paste a backup payload first!", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            coroutineScope.launch {
+                                try {
+                                    val array = JSONArray(restorePayload.trim())
+                                    var restoreCount = 0
+                                    for (i in 0 until array.length()) {
+                                        val obj = array.getJSONObject(i)
+                                        val id = obj.getString("id")
+                                        val name = obj.getString("name")
+                                        val jsonDef = obj.getString("jsonDefinition")
+                                        val isEnabled = obj.optBoolean("isEnabled", true)
+                                        val chatHistory = obj.optString("chatHistoryJson", "[]")
+                                        val versions = obj.optString("versionsJson", "[]")
+
+                                        val entity = UserTaskEntity(
+                                            id = id,
+                                            name = name,
+                                            jsonDefinition = jsonDef,
+                                            isEnabled = isEnabled,
+                                            chatHistoryJson = chatHistory,
+                                            versionsJson = versions
+                                        )
+                                        database.taskDao().insertUserTask(entity)
+                                        restoreCount++
+                                    }
+                                    restorePayload = ""
+                                    Toast.makeText(context, "Successfully restored $restoreCount agents!", Toast.LENGTH_LONG).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Failed to parse backup payload. Ensure it is valid JSON.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Icon(imageVector = Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Restore Agents")
+                    }
+                }
+            }
         }
     }
 }
@@ -755,7 +903,7 @@ fun GoogleAuthConsentDialog(
     onDismiss: () -> Unit,
     onAuthorize: (String) -> Unit
 ) {
-    var emailInput by remember { mutableStateOf("rahmanshuvo.4360@gmail.com") }
+    var emailInput by remember { mutableStateOf("") }
     var selectGmail by remember { mutableStateOf(true) }
     var selectSheets by remember { mutableStateOf(true) }
     var selectDocs by remember { mutableStateOf(true) }

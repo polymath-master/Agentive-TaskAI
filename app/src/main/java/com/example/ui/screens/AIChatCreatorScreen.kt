@@ -1,8 +1,10 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
+import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -59,6 +61,7 @@ data class ParsedAgentConfig(
 @Composable
 fun AIChatCreatorScreen(
     database: AppDatabase,
+    reconfigureTaskId: String? = null,
     onTaskCreated: () -> Unit,
     onOpenWizardWithConfig: (ParsedAgentConfig) -> Unit, // Seamless transition to visual editor
     onCancel: () -> Unit
@@ -70,6 +73,9 @@ fun AIChatCreatorScreen(
     val listState = rememberLazyListState()
     var inputMessage by remember { mutableStateOf("") }
     var isTyping by remember { mutableStateOf(false) }
+
+    var reconfigureTaskEntity by remember { mutableStateOf<UserTaskEntity?>(null) }
+    var versionHistoryList by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
 
     // System prompt configuration instructing Gemini to clearly format choices with "[Option]" prefix for the parser
     val systemPrompt = """
@@ -125,18 +131,159 @@ fun AIChatCreatorScreen(
 
     // Message lists
     val messages = remember {
-        mutableStateListOf(
-            ChatMessage(
-                text = "Hi! I'm your AI assistant. Let's design a custom automation agent together. Tell me, what task would you like to automate?",
-                isUser = false,
-                choices = listOf(
-                    "Daily Quotes ⏰",
-                    "WiFi Welcome Toast 📶",
-                    "Report Email Automator 📧",
-                    "Run Webhook Alert 🔗"
+        mutableStateListOf<ChatMessage>()
+    }
+
+    LaunchedEffect(reconfigureTaskId) {
+        if (reconfigureTaskId != null) {
+            val entity = withContext(Dispatchers.IO) {
+                database.taskDao().getUserTaskById(reconfigureTaskId)
+            }
+            if (entity != null) {
+                reconfigureTaskEntity = entity
+                try {
+                    val array = JSONArray(entity.chatHistoryJson)
+                    if (array.length() > 0) {
+                        messages.clear()
+                        for (i in 0 until array.length()) {
+                            val obj = array.getJSONObject(i)
+                            val text = obj.getString("text")
+                            val isUser = obj.getBoolean("isUser")
+                            val isJson = obj.optBoolean("isJson", false)
+                            val choicesArr = obj.optJSONArray("choices")
+                            val choicesList = mutableListOf<String>()
+                            if (choicesArr != null) {
+                                for (j in 0 until choicesArr.length()) {
+                                    choicesList.add(choicesArr.getString(j))
+                                }
+                            }
+                            
+                            var parsedData: ParsedAgentConfig? = null
+                            val pDataObj = obj.optJSONObject("parsedData")
+                            if (pDataObj != null) {
+                                val pName = pDataObj.getString("name")
+                                val pTrigType = pDataObj.getString("triggerType")
+                                val pWifiOnly = pDataObj.getBoolean("wifiOnly")
+                                val pActType = pDataObj.getString("actionType")
+                                val pRawJson = pDataObj.optString("rawJson", "")
+                                
+                                val pTrigParamsObj = pDataObj.getJSONObject("triggerParams")
+                                val pTrigParams = mutableMapOf<String, Any>()
+                                pTrigParamsObj.keys().forEach { k ->
+                                    pTrigParams[k] = pTrigParamsObj.get(k)
+                                }
+                                
+                                val pActParamsObj = pDataObj.getJSONObject("actionParams")
+                                val pActParams = mutableMapOf<String, Any>()
+                                pActParamsObj.keys().forEach { k ->
+                                    pActParams[k] = pActParamsObj.get(k)
+                                }
+                                
+                                parsedData = ParsedAgentConfig(
+                                    name = pName,
+                                    triggerType = pTrigType,
+                                    triggerParams = pTrigParams,
+                                    wifiOnly = pWifiOnly,
+                                    actionType = pActType,
+                                    actionParams = pActParams,
+                                    rawJson = pRawJson
+                                )
+                            }
+                            
+                            messages.add(
+                                ChatMessage(
+                                    text = text,
+                                    isUser = isUser,
+                                    isJson = isJson,
+                                    parsedData = parsedData,
+                                    choices = choicesList
+                                )
+                            )
+                        }
+                    } else {
+                        // Seed initial message for modification
+                        messages.clear()
+                        messages.add(
+                            ChatMessage(
+                                text = "Hi! I'm your Agent assistant. Let's reconfigure your agent '${entity.name}'. What changes would you like to make to its current behavior?",
+                                isUser = false,
+                                choices = listOf(
+                                    "Change trigger signal ⏰",
+                                    "Modify behavior 📧",
+                                    "Set WiFi condition 📶",
+                                    "Cancel modification"
+                                )
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    messages.clear()
+                    messages.add(
+                        ChatMessage(
+                            text = "Hi! I'm your Agent assistant. Let's reconfigure your agent '${entity.name}'. What changes would you like to make to its current behavior?",
+                            isUser = false,
+                            choices = listOf(
+                                "Change trigger signal ⏰",
+                                "Modify behavior 📧",
+                                "Set WiFi condition 📶",
+                                "Cancel modification"
+                            )
+                        )
+                    )
+                }
+                
+                // Populate versions
+                try {
+                    val verArr = JSONArray(entity.versionsJson)
+                    val vList = mutableListOf<JSONObject>()
+                    for (i in 0 until verArr.length()) {
+                        vList.add(verArr.getJSONObject(i))
+                    }
+                    versionHistoryList = vList
+                } catch (e: Exception) {}
+            }
+        } else {
+            // Standard creation seeding
+            if (messages.isEmpty()) {
+                messages.add(
+                    ChatMessage(
+                        text = "Hi! I'm your Agent assistant. Let's design a custom automation agent together. Tell me, what task would you like to automate?",
+                        isUser = false,
+                        choices = listOf(
+                            "Daily Quotes ⏰",
+                            "WiFi Welcome Toast 📶",
+                            "Report Email Automator 📧",
+                            "Run Webhook Alert 🔗"
+                        )
+                    )
                 )
-            )
-        )
+            }
+        }
+    }
+
+    val currentPrompt = if (reconfigureTaskEntity != null) {
+        """
+        You are Agentive's conversational AI Agent Builder. 
+        You are MODIFYING an existing automation agent named '${reconfigureTaskEntity?.name}'.
+        Its current JSON definition is:
+        ${reconfigureTaskEntity?.jsonDefinition}
+        
+        Ask clarifying questions or guide the user to adjust trigger times, keywords, action targets, and parameters.
+        
+        When asking questions with multiple-choice options, ALWAYS list the options clearly at the end of your message, with each option on a new line starting with '[Option] ', like this:
+        [Option] Change trigger signal
+        [Option] Modify behavior
+        [Option] Set WiFi condition
+        
+        Keep options short (1-3 words) and highly tapable.
+        
+        Once you have gathered modification details and the user is ready, output the updated complete agent JSON inside markdown codeblocks like this:
+        ```json
+        ...
+        ```
+        """.trimIndent()
+    } else {
+        systemPrompt
     }
 
     // Capture soft keyboard visibility to adjust scroll position automatically
@@ -158,7 +305,7 @@ fun AIChatCreatorScreen(
             
             scope.launch {
                 val promptBuilder = StringBuilder()
-                promptBuilder.append("System Instructions:\n$systemPrompt\n\n")
+                promptBuilder.append("System Instructions:\n$currentPrompt\n\n")
                 promptBuilder.append("Here is the prior conversation history with the user:\n\n")
                 messages.forEach {
                     val role = if (it.isUser) "User" else "AI Assistant"
@@ -219,8 +366,16 @@ fun AIChatCreatorScreen(
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text("Agentive Chat Builder", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("Interactive Conversation", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = if (reconfigureTaskEntity != null) "Modify Agent" else "Agentive Chat Builder",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (reconfigureTaskEntity != null) "Configuring: ${reconfigureTaskEntity?.name}" else "Interactive Conversation",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 },
@@ -242,6 +397,111 @@ fun AIChatCreatorScreen(
                 .navigationBarsPadding() // Space for system navigation bar when keyboard is hidden
                 .background(MaterialTheme.colorScheme.background)
         ) {
+            // Version Rollback UI Options
+            if (reconfigureTaskId != null && versionHistoryList.isNotEmpty()) {
+                var showVersions by remember { mutableStateOf(false) }
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)),
+                    border = CardDefaults.outlinedCardBorder()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { showVersions = !showVersions },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.History,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Version History (${versionHistoryList.size})",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            IconButton(onClick = { showVersions = !showVersions }) {
+                                Icon(
+                                    imageVector = if (showVersions) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = null
+                                )
+                            }
+                        }
+
+                        if (showVersions) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            androidx.compose.foundation.lazy.LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                items(versionHistoryList.size) { index ->
+                                    val vObj = versionHistoryList[index]
+                                    val versionNum = vObj.optInt("version", index + 1)
+                                    val time = vObj.optString("timestamp", "Prior version")
+                                    val jsonDef = vObj.optString("jsonDefinition", "")
+                                    
+                                    Card(
+                                        modifier = Modifier.width(180.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                    ) {
+                                        Column(modifier = Modifier.padding(10.dp)) {
+                                            Text(
+                                                text = "Version $versionNum",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = time,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Button(
+                                                onClick = {
+                                                    scope.launch(Dispatchers.IO) {
+                                                        val currentEntity = reconfigureTaskEntity
+                                                        if (currentEntity != null) {
+                                                            val updated = UserTaskEntity(
+                                                                id = currentEntity.id,
+                                                                name = currentEntity.name,
+                                                                jsonDefinition = jsonDef,
+                                                                isEnabled = currentEntity.isEnabled,
+                                                                chatHistoryJson = currentEntity.chatHistoryJson,
+                                                                versionsJson = currentEntity.versionsJson
+                                                            )
+                                                            database.taskDao().insertUserTask(updated)
+                                                            scope.launch(Dispatchers.Main) {
+                                                                messages.add(
+                                                                    ChatMessage(
+                                                                        text = "↩️ Rolled back to Version $versionNum successfully! You can resume customizing or go back to the dashboard.",
+                                                                        isUser = false
+                                                                    )
+                                                                )
+                                                                Toast.makeText(context, "Rolled back to Version $versionNum!", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                contentPadding = PaddingValues(vertical = 4.dp, horizontal = 8.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                            ) {
+                                                Text("Restore", style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Conversational Scroll Area
             LazyColumn(
                 state = listState,
@@ -260,12 +520,12 @@ fun AIChatCreatorScreen(
                         onChoiceSelected = { choiceText ->
                             // Submit the chosen option immediately as a chat response!
                             // Strip any emoji endings for clear model comprehension if needed
-                            val cleanSubmission = choiceText.replace(Regex("[⏰📶📧🔗⚡🔔📞✨🌅☀️🌆🌌🚨⚠️💼]"), "").trim()
+                            val cleanSubmission = choiceText.replace(Regex("[⏰📶📧🔗⚡🔔📞✨🌅☀️🌆🌌🚨⚠️💼↩️]"), "").trim()
                             onSendMessage(cleanSubmission)
                         },
                         onSave = { config ->
                             scope.launch(Dispatchers.IO) {
-                                saveParsedConfig(database, config) {
+                                saveParsedConfig(database, config, reconfigureTaskId, messages) {
                                     scope.launch(Dispatchers.Main) {
                                         try {
                                             com.example.widget.updateWidget(context)
@@ -557,7 +817,7 @@ fun TypingIndicator() {
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = "Gemini is defining your agent...",
+            text = "Agent is defining your agent...",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -800,14 +1060,16 @@ private fun extractQuickReplies(text: String): Pair<String, List<String>> {
     return Pair(restoredText, choices.distinct())
 }
 
-// Database persistent saver matching Section 10.2 schema payload exactly
+// Database persistent saver matching Section 10.2 schema payload exactly, with reconfig and history support
 private suspend fun saveParsedConfig(
     database: AppDatabase,
     config: ParsedAgentConfig,
+    reconfigureTaskId: String? = null,
+    messagesList: List<ChatMessage> = emptyList(),
     onComplete: () -> Unit
 ) {
     val rootObj = JSONObject()
-    val id = "user_" + UUID.randomUUID().toString().take(6)
+    val id = reconfigureTaskId ?: ("user_" + UUID.randomUUID().toString().take(6))
     
     rootObj.put("id", id)
     rootObj.put("name", config.name)
@@ -861,13 +1123,64 @@ private suspend fun saveParsedConfig(
     }
     rootObj.put("action", actionObj)
 
+    val serializedHistory = serializeMessages(messagesList)
+
+    var versionsStr = "[]"
+    if (reconfigureTaskId != null) {
+        val existing = database.taskDao().getUserTaskById(reconfigureTaskId)
+        if (existing != null) {
+            val vArr = try {
+                JSONArray(existing.versionsJson)
+            } catch (e: Exception) {
+                JSONArray()
+            }
+            val vObj = JSONObject()
+            vObj.put("version", vArr.length() + 1)
+            vObj.put("timestamp", java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date()))
+            vObj.put("jsonDefinition", existing.jsonDefinition)
+            vArr.put(vObj)
+            versionsStr = vArr.toString()
+        }
+    }
+
     val entity = UserTaskEntity(
         id = id,
         name = config.name,
         jsonDefinition = rootObj.toString(),
-        isEnabled = true
+        isEnabled = true,
+        chatHistoryJson = serializedHistory,
+        versionsJson = versionsStr
     )
 
     database.taskDao().insertUserTask(entity)
     onComplete()
+}
+
+// Custom serialization utility for persistent chat context retention
+private fun serializeMessages(messages: List<ChatMessage>): String {
+    val array = JSONArray()
+    messages.forEach { msg ->
+        val obj = JSONObject()
+        obj.put("text", msg.text)
+        obj.put("isUser", msg.isUser)
+        obj.put("isJson", msg.isJson)
+        if (msg.parsedData != null) {
+            val pData = JSONObject()
+            pData.put("name", msg.parsedData.name)
+            pData.put("triggerType", msg.parsedData.triggerType)
+            val pParams = JSONObject(msg.parsedData.triggerParams)
+            pData.put("triggerParams", pParams)
+            pData.put("wifiOnly", msg.parsedData.wifiOnly)
+            pData.put("actionType", msg.parsedData.actionType)
+            val aParams = JSONObject(msg.parsedData.actionParams)
+            pData.put("actionParams", aParams)
+            pData.put("rawJson", msg.parsedData.rawJson)
+            obj.put("parsedData", pData)
+        }
+        val choicesArr = JSONArray()
+        msg.choices?.forEach { choicesArr.put(it) }
+        obj.put("choices", choicesArr)
+        array.put(obj)
+    }
+    return array.toString()
 }

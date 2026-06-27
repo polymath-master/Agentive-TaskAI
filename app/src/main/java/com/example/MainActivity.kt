@@ -129,6 +129,7 @@ class MainActivity : ComponentActivity() {
                                     currentScreen = Screen.AGENT_DETAIL
                                 },
                                 onNavigateToCreator = {
+                                    selectedTaskId = null
                                     activeWizardConfig = null
                                     currentScreen = Screen.CHAT_CREATOR
                                 },
@@ -162,19 +163,30 @@ class MainActivity : ComponentActivity() {
                                 database = database,
                                 preferencesManager = preferencesManager,
                                 onBack = { currentScreen = Screen.DASHBOARD },
-                                onNavigateToSettings = { currentScreen = Screen.SETTINGS }
+                                onNavigateToSettings = { currentScreen = Screen.SETTINGS },
+                                onNavigateToAIChatReconfigure = { id ->
+                                    selectedTaskId = id
+                                    currentScreen = Screen.CHAT_CREATOR
+                                }
                             )
                         }
 
                         Screen.CHAT_CREATOR -> {
                             com.example.ui.screens.AIChatCreatorScreen(
                                 database = database,
+                                reconfigureTaskId = selectedTaskId,
                                 onTaskCreated = { currentScreen = Screen.DASHBOARD },
                                 onOpenWizardWithConfig = { config ->
                                     activeWizardConfig = config
                                     currentScreen = Screen.CREATOR
                                 },
-                                onCancel = { currentScreen = Screen.DASHBOARD }
+                                onCancel = {
+                                    if (selectedTaskId != null) {
+                                        currentScreen = Screen.AGENT_DETAIL
+                                    } else {
+                                        currentScreen = Screen.DASHBOARD
+                                    }
+                                }
                             )
                         }
 
@@ -197,6 +209,7 @@ class MainActivity : ComponentActivity() {
                         Screen.GLOBAL_SETTINGS -> {
                             GlobalSettingsScreen(
                                 preferencesManager = preferencesManager,
+                                database = database,
                                 onBack = { currentScreen = Screen.DASHBOARD }
                             )
                         }
