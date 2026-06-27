@@ -10,7 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.core.ai.AIService
 import com.example.core.permissions.SpecialPermission
-import com.example.core.permissions.AgentAccessibilityService
+import com.example.AutomationAccessibilityService
 import com.example.core.storage.PreferencesManager
 import com.example.task.*
 
@@ -94,10 +94,10 @@ class WhatsAppContinuationTask(private val context: Context) : AgentTask {
     }
 
     private fun getWhatsAppChatTranscript(): String {
-        // Query compiled accessibility cache thread, or return simulation if WhatsApp is not opened currently
-        val activeCache = AgentAccessibilityService.lastWhatsAppTranscript
-        if (activeCache.isNotBlank()) {
-            return activeCache
+        // Query active accessibility screen scrape, or return simulation if not on screen
+        val scraped = AutomationAccessibilityService.scrapeScreen()
+        if (scraped.isNotEmpty()) {
+            return scraped.joinToString("\n")
         }
         return """
             Friend: Hey! Are you free to join our tech meetup in Banani tomorrow evening?

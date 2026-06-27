@@ -7,6 +7,7 @@ import com.example.core.storage.Article
 import com.example.core.storage.PreferencesManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
@@ -47,6 +48,16 @@ class AIService(private val context: Context) {
     }
 
     private suspend fun makeGeminiRequest(prompt: String, systemInstruction: String? = null): String = withContext(Dispatchers.IO) {
+        val useOpenrouter = try {
+            preferencesManager.useOpenrouterFlow.first()
+        } catch (e: Exception) {
+            false
+        }
+
+        if (useOpenrouter) {
+            return@withContext makeOpenRouterRequest(prompt, systemInstruction)
+        }
+
         val apiKey = getApiKey()
         if (apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()) {
             return@withContext "Error: Gemini API key is not configured. Please enter your API key in the Settings or AI Studio Secrets panel."
@@ -137,6 +148,125 @@ class AIService(private val context: Context) {
             }
         }
         return@withContext "Network Exception on Gemini request: ${lastException?.localizedMessage ?: "Timeout"}"
+    }
+
+    private fun resolveOpenRouterModel(modelName: String): String {
+        val cleaned = modelName.trim().lowercase()
+        return when {
+            cleaned == "gemini" || cleaned == "gemini-flash" || cleaned.contains("gemini-2.5") -> "google/gemini-2.5-flash"
+            cleaned == "gemini-pro" -> "google/gemini-2.5-pro"
+            cleaned == "llama" || cleaned == "llama3" || cleaned.contains("llama-3") -> "meta-llama/llama-3-8b-instruct:free"
+            cleaned == "deepseek" || cleaned.contains("deepseek-chat") || cleaned == "deepseek-coder" -> "deepseek/deepseek-chat"
+            cleaned == "claude" || cleaned.contains("claude-3") -> "anthropic/claude-3.5-sonnet"
+            cleaned == "gpt-4" || cleaned.contains("gpt4") -> "openai/gpt-4o-mini"
+            !modelName.contains("/") -> {
+                when {
+                    cleaned.startsWith("gemini") -> "google/$modelName"
+                    cleaned.startsWith("llama") -> "meta-llama/$modelName"
+                    cleaned.startsWith("claude") -> "anthropic/$modelName"
+                    cleaned.startsWith("gpt") -> "openai/$modelName"
+                    cleaned.startsWith("deepseek") -> "deepseek/$modelName"
+                    else -> "google/$modelName"
+                }
+            }
+            else -> modelName
+        }
+    }
+
+    private suspend fun makeOpenRouterRequest(prompt: String, systemInstruction: String? = null): String = withContext(Dispatchers.IO) {
+        val orKey = try {
+            preferencesManager.openrouterApiKeyFlow.first()
+        } catch (e: Exception) {
+            ""
+        }
+
+        if (orKey.isBlank()) {
+            return@withContext "Error: OpenRouter API key is blank. Please enter your OpenRouter key in Settings."
+        }
+
+        val orModel = try {
+            preferencesManager.openrouterModelFlow.first()
+        } catch (e: Exception) {
+            "google/gemini-2.5-flash"
+        }
+
+        val resolvedModel = resolveOpenRouterModel(orModel)
+        val url = "https://openrouter.ai/api/v1/chat/completions"
+
+        // Build Payload
+        val payload = JSONObject()
+        payload.put("model", resolvedModel)
+
+        val messagesArray = JSONArray()
+
+        if (systemInstruction != null) {
+            val systemMsg = JSONObject()
+            systemMsg.put("role", "system")
+            systemMsg.put("content", systemInstruction)
+            messagesArray.put(systemMsg)
+        }
+
+        val userMsg = JSONObject()
+        userMsg.put("role", "user")
+        userMsg.put("content", prompt)
+        messagesArray.put(userMsg)
+
+        payload.put("messages", messagesArray)
+
+        val requestBody = payload.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer $orKey")
+            .addHeader("HTTP-Referer", "https://ai.studio/build")
+            .addHeader("X-Title", "Agentive TaskAI")
+            .post(requestBody)
+            .build()
+
+        var attempt = 0
+        var lastException: Exception? = null
+        val maxRetries = 2
+        var backoffMs = 1000L
+
+        while (attempt <= maxRetries) {
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val bodyString = response.body?.string() ?: return@withContext "Error: Empty response body from OpenRouter"
+                        val jsonResponse = JSONObject(bodyString)
+                        val choices = jsonResponse.optJSONArray("choices")
+                        if (choices != null && choices.length() > 0) {
+                            val firstChoice = choices.getJSONObject(0)
+                            val messageObj = firstChoice.optJSONObject("message")
+                            if (messageObj != null) {
+                                return@withContext messageObj.optString("content", "No content found in message")
+                            }
+                        }
+                        return@withContext "Error: Unexpected OpenRouter response format: $bodyString"
+                    } else {
+                        val errString = response.body?.string() ?: ""
+                        Log.e("AIService", "OpenRouter error code ${response.code}: $errString")
+                        if (response.code == 429 || response.code >= 500) {
+                            attempt++
+                            if (attempt <= maxRetries) {
+                                Thread.sleep(backoffMs)
+                                backoffMs *= 2
+                                continue
+                            }
+                        }
+                        return@withContext "Error calling OpenRouter: Server returned code ${response.code}\n$errString"
+                    }
+                }
+            } catch (e: Exception) {
+                lastException = e
+                Log.e("AIService", "Network exception on OpenRouter request attempt $attempt", e)
+                attempt++
+                if (attempt <= maxRetries) {
+                    Thread.sleep(backoffMs)
+                    backoffMs *= 2
+                }
+            }
+        }
+        return@withContext "Network Exception on OpenRouter request: ${lastException?.localizedMessage ?: "Timeout"}"
     }
 
     /**

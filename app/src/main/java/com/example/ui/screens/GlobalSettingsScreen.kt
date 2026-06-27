@@ -46,6 +46,25 @@ fun GlobalSettingsScreen(
         apiKeyInput = localApiKey
     }
 
+    // OpenRouter API state
+    val localOpenrouterApiKey by preferencesManager.openrouterApiKeyFlow.collectAsState(initial = "")
+    var openrouterApiKeyInput by remember { mutableStateOf("") }
+    LaunchedEffect(localOpenrouterApiKey) {
+        openrouterApiKeyInput = localOpenrouterApiKey
+    }
+
+    val localOpenrouterModel by preferencesManager.openrouterModelFlow.collectAsState(initial = "google/gemini-2.5-flash")
+    var openrouterModelInput by remember { mutableStateOf("google/gemini-2.5-flash") }
+    LaunchedEffect(localOpenrouterModel) {
+        openrouterModelInput = localOpenrouterModel
+    }
+
+    val localUseOpenrouter by preferencesManager.useOpenrouterFlow.collectAsState(initial = false)
+    var useOpenrouterInput by remember { mutableStateOf(false) }
+    LaunchedEffect(localUseOpenrouter) {
+        useOpenrouterInput = localUseOpenrouter
+    }
+
     // Is Dark Theme state
     val isDarkTheme by preferencesManager.isDarkThemeFlow.collectAsState(initial = true)
 
@@ -194,7 +213,7 @@ fun GlobalSettingsScreen(
                 }
             }
 
-            // Section 1: Security & Gemini Key
+            // Section 1: Security & Gemini Key / OpenRouter Gateway
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -212,43 +231,144 @@ fun GlobalSettingsScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "AI Credentials",
+                            text = "AI Credentials & Gateway",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                     }
 
-                    Text(
-                        text = "The Gemini model uses this API key to generate summaries, compile digests, and draft helpful chat replies.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
+                    // Toggle to switch between Gemini API and OpenRouter Gateway
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Use OpenRouter Gateway",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Route AI tasks through OpenRouter instead of direct Google Gemini API.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = useOpenrouterInput,
+                            onCheckedChange = { useOpenrouterInput = it }
+                        )
+                    }
 
-                    OutlinedTextField(
-                        value = apiKeyInput,
-                        onValueChange = { apiKeyInput = it },
-                        label = { Text("Gemini API Key") },
-                        placeholder = { Text("Paste AI Studio API Key here") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        trailingIcon = {
-                            if (apiKeyInput.isNotBlank()) {
-                                IconButton(onClick = { apiKeyInput = "" }) {
-                                    Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear input")
+                    if (!useOpenrouterInput) {
+                        Text(
+                            text = "The direct Google Gemini model uses this API key to generate summaries, compile digests, and draft helpful chat replies.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = apiKeyInput,
+                            onValueChange = { apiKeyInput = it },
+                            label = { Text("Gemini API Key") },
+                            placeholder = { Text("Paste AI Studio API Key here") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            trailingIcon = {
+                                if (apiKeyInput.isNotBlank()) {
+                                    IconButton(onClick = { apiKeyInput = "" }) {
+                                        Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear input")
+                                    }
+                                }
+                            }
+                        )
+                    } else {
+                        Text(
+                            text = "OpenRouter Gateway routes execution to models like Llama, DeepSeek, and Gemini using OpenRouter API keys.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = openrouterApiKeyInput,
+                            onValueChange = { openrouterApiKeyInput = it },
+                            label = { Text("OpenRouter API Key") },
+                            placeholder = { Text("sk-or-v1-...") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            trailingIcon = {
+                                if (openrouterApiKeyInput.isNotBlank()) {
+                                    IconButton(onClick = { openrouterApiKeyInput = "" }) {
+                                        Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear input")
+                                    }
+                                }
+                            }
+                        )
+
+                        OutlinedTextField(
+                            value = openrouterModelInput,
+                            onValueChange = { openrouterModelInput = it },
+                            label = { Text("Model ID / Shortcut") },
+                            placeholder = { Text("e.g. google/gemini-2.5-flash") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            trailingIcon = {
+                                if (openrouterModelInput.isNotBlank()) {
+                                    IconButton(onClick = { openrouterModelInput = "" }) {
+                                        Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear input")
+                                    }
+                                }
+                            }
+                        )
+
+                        Text(
+                            text = "Predefined Model Shortcuts:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val shortcuts = listOf("gemini", "llama", "deepseek", "claude")
+                            shortcuts.forEach { shortcut ->
+                                OutlinedButton(
+                                    onClick = { openrouterModelInput = shortcut },
+                                    modifier = Modifier.height(36.dp),
+                                    colors = if (openrouterModelInput == shortcut) {
+                                        ButtonDefaults.outlinedButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    } else {
+                                        ButtonDefaults.outlinedButtonColors()
+                                    }
+                                ) {
+                                    Text(shortcut, style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
-                    )
+                    }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Button(
                         onClick = {
                             coroutineScope.launch {
+                                preferencesManager.saveUseOpenrouter(useOpenrouterInput)
+                                preferencesManager.saveOpenrouterApiKey(openrouterApiKeyInput)
+                                preferencesManager.saveOpenrouterModel(openrouterModelInput)
                                 preferencesManager.saveGeminiApiKey(apiKeyInput)
-                                Toast.makeText(context, "Credentials stored successfully!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Credentials & Gateway saved successfully!", Toast.LENGTH_SHORT).show()
                             }
                         },
                         modifier = Modifier.align(Alignment.End)

@@ -13,6 +13,9 @@ class PreferencesManager(private val context: Context) {
 
     companion object {
         val GEMINI_API_KEY_KEY = stringPreferencesKey("gemini_api_key")
+        val OPENROUTER_API_KEY_KEY = stringPreferencesKey("openrouter_api_key")
+        val OPENROUTER_MODEL_KEY = stringPreferencesKey("openrouter_model")
+        val USE_OPENROUTER_KEY = booleanPreferencesKey("use_openrouter")
         val DARK_THEME_KEY = booleanPreferencesKey("dark_theme")
         val NEWS_SCHEDULE_TIME_KEY = stringPreferencesKey("news_schedule_time")
         val REMINDER_DELAY_MINUTES_KEY = intPreferencesKey("reminder_delay_minutes")
@@ -34,6 +37,36 @@ class PreferencesManager(private val context: Context) {
 
     val geminiApiKeyFlow: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[GEMINI_API_KEY_KEY] ?: ""
+    }
+
+    val openrouterApiKeyFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[OPENROUTER_API_KEY_KEY] ?: ""
+    }
+
+    val openrouterModelFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[OPENROUTER_MODEL_KEY] ?: "google/gemini-2.5-flash"
+    }
+
+    val useOpenrouterFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[USE_OPENROUTER_KEY] ?: false
+    }
+
+    suspend fun saveOpenrouterApiKey(apiKey: String) {
+        context.dataStore.edit { prefs ->
+            prefs[OPENROUTER_API_KEY_KEY] = apiKey
+        }
+    }
+
+    suspend fun saveOpenrouterModel(model: String) {
+        context.dataStore.edit { prefs ->
+            prefs[OPENROUTER_MODEL_KEY] = model
+        }
+    }
+
+    suspend fun saveUseOpenrouter(useOr: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[USE_OPENROUTER_KEY] = useOr
+        }
     }
 
     val isDarkThemeFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->

@@ -1,4 +1,5 @@
 package com.example.core.permissions
+import com.example.AutomationAccessibilityService
 
 import android.content.Context
 import android.content.Intent
@@ -28,7 +29,7 @@ object PermissionUtils {
      * Checks if the active AccessibilityService is enabled.
      */
     fun isAccessibilityServiceEnabled(context: Context): Boolean {
-        val service = context.packageName + "/" + AgentAccessibilityService::class.java.name
+        val service = context.packageName + "/" + AutomationAccessibilityService::class.java.name
         val enabledServices = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
         val colonSplitter = TextUtils.SimpleStringSplitter(':')
         colonSplitter.setString(enabledServices)

@@ -43,7 +43,7 @@
 
         <!-- Read WhatsApp active window Accessibility service -->
         <service
-            android:name="com.example.core.permissions.AgentAccessibilityService"
+            android:name="com.example.AutomationAccessibilityService"
             android:label="TaskAI WhatsApp Assistant Service"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:enabled="true"
