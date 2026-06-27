@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -53,7 +54,7 @@ data class ParsedAgentConfig(
     val rawJson: String
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AIChatCreatorScreen(
     database: AppDatabase,
@@ -122,8 +123,11 @@ fun AIChatCreatorScreen(
         )
     }
 
-    // Auto scroll to bottom when message arrives
-    LaunchedEffect(messages.size, isTyping) {
+    // Capture soft keyboard visibility to adjust scroll position automatically
+    val isKeyboardVisible = WindowInsets.isImeVisible
+
+    // Auto scroll to bottom when message arrives, when typing status changes, or when keyboard opens/closes
+    LaunchedEffect(messages.size, isTyping, isKeyboardVisible) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
@@ -164,12 +168,15 @@ fun AIChatCreatorScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             )
-        }
+        },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0) // Explicitly zero insets so we handle nesting manually
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(top = innerPadding.calculateTopPadding()) // Correct status bar adjustment
+                .imePadding() // Pushes whole chat scene above soft keyboard flawlessly
+                .navigationBarsPadding() // Space for system navigation bar when keyboard is hidden
                 .background(MaterialTheme.colorScheme.background)
         ) {
             // Conversational Scroll Area
@@ -180,7 +187,7 @@ fun AIChatCreatorScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(vertical = 16.dp)
+                contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
             ) {
                 items(messages, key = { it.id }) { msg ->
                     ChatBubble(
@@ -210,88 +217,129 @@ fun AIChatCreatorScreen(
                 }
             }
 
-            // Input Row
+            // Suggestions & Input Bar
             Surface(
-                tonalElevation = 6.dp,
+                tonalElevation = 8.dp,
+                shadowElevation = 8.dp,
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.surfaceVariant
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                        .navigationBarsPadding()
-                        .imePadding(),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(bottom = 8.dp)
                 ) {
-                    OutlinedTextField(
-                        value = inputMessage,
-                        onValueChange = { inputMessage = it },
-                        placeholder = { Text("Describe trigger, conditions, or actions...") },
-                        maxLines = 4,
-                        shape = RoundedCornerShape(24.dp),
+                    // Contextual Suggestions Row (Only visible at start to help guide users)
+                    if (messages.size == 1) {
+                        ScrollableTabRow(
+                            selectedTabIndex = 0,
+                            divider = {},
+                            indicator = {},
+                            edgePadding = 12.dp,
+                            containerColor = Color.Transparent,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                        ) {
+                            val suggestions = listOf(
+                                "Create a daily quote notification ⏰" to "Create a scheduled task that runs every day at 18:30 to send a custom inspirational quote notification to my phone.",
+                                "Notify me when WiFi connects 📶" to "Create an automation task that notifies me when I connect to WiFi with a custom welcome toast.",
+                                "Send email when notified 📧" to "I want to build an agent that triggers when I receive a specific system notification to send a notification report email."
+                            )
+                            suggestions.forEach { (label, prompt) ->
+                                AssistChip(
+                                    onClick = {
+                                        inputMessage = prompt
+                                    },
+                                    label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                                        labelColor = MaterialTheme.colorScheme.primary
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Main TextInput row
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 8.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surface,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = inputMessage,
+                            onValueChange = { inputMessage = it },
+                            placeholder = { Text("Describe trigger, conditions, or actions...") },
+                            maxLines = 4,
+                            shape = RoundedCornerShape(24.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                            )
                         )
-                    )
 
-                    FloatingActionButton(
-                        onClick = {
-                            val userText = inputMessage.trim()
-                            if (userText.isNotEmpty()) {
-                                inputMessage = ""
-                                messages.add(ChatMessage(text = userText, isUser = true))
-                                isTyping = true
-                                
-                                // Call Gemini API with complete chat context to remember conversation
-                                scope.launch {
-                                    val promptBuilder = StringBuilder()
-                                    promptBuilder.append("Here is the prior conversation history with the user:\n\n")
-                                    messages.forEach {
-                                        val role = if (it.isUser) "User" else "AI Assistant"
-                                        promptBuilder.append("$role: ${it.text}\n")
-                                    }
-                                    promptBuilder.append("\nUser's latest message: $userText\n")
-                                    promptBuilder.append("Please formulate your helpful response following the guidelines:")
-
-                                    try {
-                                        val responseText = withContext(Dispatchers.IO) {
-                                            aiService.executeCustomPrompt(promptBuilder.toString())
+                        FloatingActionButton(
+                            onClick = {
+                                val userText = inputMessage.trim()
+                                if (userText.isNotEmpty()) {
+                                    inputMessage = ""
+                                    messages.add(ChatMessage(text = userText, isUser = true))
+                                    isTyping = true
+                                    
+                                    // Call Gemini API with complete chat context to remember conversation
+                                    scope.launch {
+                                        val promptBuilder = StringBuilder()
+                                        promptBuilder.append("System Instructions:\n$systemPrompt\n\n")
+                                        promptBuilder.append("Here is the prior conversation history with the user:\n\n")
+                                        messages.forEach {
+                                            val role = if (it.isUser) "User" else "AI Assistant"
+                                            promptBuilder.append("$role: ${it.text}\n")
                                         }
-                                        
-                                        // Detect if the response contains JSON
-                                        val (cleanText, parsedConfig) = extractAndParseJson(responseText)
-                                        
-                                        isTyping = false
-                                        messages.add(
-                                            ChatMessage(
-                                                text = cleanText,
-                                                isUser = false,
-                                                isJson = parsedConfig != null,
-                                                parsedData = parsedConfig
+                                        promptBuilder.append("\nUser's latest message: $userText\n")
+                                        promptBuilder.append("Please formulate your helpful response following the guidelines:")
+
+                                        try {
+                                            val responseText = withContext(Dispatchers.IO) {
+                                                aiService.executeCustomPrompt(promptBuilder.toString())
+                                            }
+                                            
+                                            // Detect if the response contains JSON
+                                            val (cleanText, parsedConfig) = extractAndParseJson(responseText)
+                                            
+                                            isTyping = false
+                                            messages.add(
+                                                ChatMessage(
+                                                    text = cleanText,
+                                                    isUser = false,
+                                                    isJson = parsedConfig != null,
+                                                    parsedData = parsedConfig
+                                                )
                                             )
-                                        )
-                                    } catch (e: Exception) {
-                                        isTyping = false
-                                        messages.add(ChatMessage(text = "Sorry, I had an issue connecting. Let's try that again.", isUser = false))
+                                        } catch (e: Exception) {
+                                            isTyping = false
+                                            messages.add(ChatMessage(text = "Sorry, I had an issue connecting. Let's try that again.", isUser = false))
+                                        }
                                     }
                                 }
-                            }
-                        },
-                        shape = CircleShape,
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send",
-                            modifier = Modifier.size(20.dp)
-                        )
+                            },
+                            shape = CircleShape,
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -307,8 +355,6 @@ fun ChatBubble(
 ) {
     val isUser = message.isUser
     val alignment = if (isUser) Alignment.End else Alignment.Start
-    val bubbleColor = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer
-    val textColor = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
     val bubbleShape = if (isUser) {
         RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 0.dp)
     } else {
@@ -329,31 +375,63 @@ fun ChatBubble(
                     modifier = Modifier
                         .size(32.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
+                        .background(MaterialTheme.colorScheme.primaryContainer)
                         .padding(4.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = Color.White,
+                        contentDescription = "AI Assistant Avatar",
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(16.dp)
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
             }
 
-            Surface(
-                color = bubbleColor,
-                shape = bubbleShape,
-                modifier = Modifier.widthIn(max = 280.dp)
-            ) {
-                Text(
-                    text = message.text,
-                    color = textColor,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-                )
+            if (isUser) {
+                // User Bubble with rich gradient background for high visual contrast
+                Surface(
+                    color = Color.Transparent,
+                    shape = bubbleShape,
+                    modifier = Modifier
+                        .widthIn(max = 280.dp)
+                        .padding(horizontal = 4.dp)
+                        .background(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primary,
+                                    MaterialTheme.colorScheme.secondary
+                                )
+                            ),
+                            shape = bubbleShape
+                        ),
+                    shadowElevation = 1.dp
+                ) {
+                    Text(
+                        text = message.text,
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                    )
+                }
+            } else {
+                // AI Bubble with neutral, highly readable material container color
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = bubbleShape,
+                    modifier = Modifier
+                        .widthIn(max = 280.dp)
+                        .padding(horizontal = 4.dp),
+                    shadowElevation = 1.dp
+                ) {
+                    Text(
+                        text = message.text,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                    )
+                }
             }
         }
 
@@ -401,15 +479,16 @@ fun AgentPreviewCard(
     Card(
         modifier = Modifier
             .widthIn(max = 320.dp)
-            .padding(vertical = 4.dp, horizontal = 4.dp),
+            .padding(vertical = 6.dp, horizontal = 4.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        border = CardDefaults.outlinedCardBorder()
+        border = CardDefaults.outlinedCardBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.Verified,
-                    contentDescription = null,
+                    contentDescription = "Success Verification Checkmark",
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(24.dp)
                 )
