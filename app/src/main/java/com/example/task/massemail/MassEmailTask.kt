@@ -57,12 +57,12 @@ class MassEmailTask(private val context: Context) : AgentTask {
         if (showConsentDialog) {
             GoogleAuthConsentDialog(
                 onDismiss = { showConsentDialog = false },
-                onAuthorize = { email ->
+                onAuthorize = { email, accessToken, refreshToken ->
                     googleApiHelper.connectAccount(
                         context = currentContext,
                         email = email,
-                        accessToken = "ya29.sandboxed-token-${System.currentTimeMillis()}",
-                        refreshToken = "1//mock-refresh-token-sandboxed-${System.currentTimeMillis()}"
+                        accessToken = accessToken,
+                        refreshToken = refreshToken
                     )
                     isGoogleConnected = true
                     connectedEmail = email

@@ -46,6 +46,9 @@ class MainActivity : ComponentActivity() {
         // Edge-to-edge support is mandatory under Material 3 guidelines
         enableEdgeToEdge()
 
+        // Initialize Firebase programmatically
+        com.example.core.firebase.FirebaseHelper.initialize(applicationContext)
+
         val database = AppDatabase.getDatabase(applicationContext)
         val preferencesManager = PreferencesManager(applicationContext)
         val registry = TaskRegistry(applicationContext)
