@@ -34,13 +34,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-// Data model for messages in the conversation
+// Data model for messages in the conversation, now with interactive bullet options support
 data class ChatMessage(
     val id: String = UUID.randomUUID().toString(),
     val text: String,
     val isUser: Boolean,
     val isJson: Boolean = false,
-    val parsedData: ParsedAgentConfig? = null
+    val parsedData: ParsedAgentConfig? = null,
+    val choices: List<String>? = null // Dynamic tapable bullets / quick-reply option lists
 )
 
 // Simplified representation of the AI-generated JSON definition
@@ -70,17 +71,26 @@ fun AIChatCreatorScreen(
     var inputMessage by remember { mutableStateOf("") }
     var isTyping by remember { mutableStateOf(false) }
 
-    // System prompt configuration for the AI builder
+    // System prompt configuration instructing Gemini to clearly format choices with "[Option]" prefix for the parser
     val systemPrompt = """
         You are Agentive's conversational AI Agent Builder. Your goal is to guide the user to design an automation agent.
         Greet the user friendly: "Hi! I'm your AI assistant. Tell me what kind of agent you want to create."
         Ask clarifying questions to gather any missing information, such as:
-        1. What signal triggers this automation? (Available: SCHEDULE, MANUAL, NOTIFICATION_RECEIVED, CALL_STATE)
+        1. What signal triggers this automation? (Available triggers: SCHEDULE, MANUAL, NOTIFICATION_RECEIVED, CALL_STATE)
         2. Are there any conditions? (e.g. WiFi only)
         3. What actions should be taken when triggered? (Available actions: AI_GENERATE_AND_NOTIFY, SHOW_NOTIFICATION, WEBHOOK, SEND_EMAIL, OPEN_APP, SHOW_TOAST, COPY_CLIPBOARD, SHOW_OVERLAY)
         4. What parameters are needed? (e.g. prompt, email recipient, webhook URL, package name, text to show, scheduled time, trigger keyword)
 
         Make sure to ask questions one or two at a time so as not to overwhelm the user. Maintain the conversation state and remember prior choices.
+        
+        When asking questions with multiple-choice options, ALWAYS list the options clearly at the end of your message, with each option on a new line starting with '[Option] ', like this:
+        [Option] SCHEDULE
+        [Option] NOTIFICATION_RECEIVED
+        [Option] MANUAL
+        [Option] CALL_STATE
+        
+        Keep options short (1-3 words) and highly tapable.
+        
         Once you have enough information to fully define the automation, output the complete agent JSON configuration inside markdown codeblocks like this:
         ```json
         {
@@ -118,7 +128,13 @@ fun AIChatCreatorScreen(
         mutableStateListOf(
             ChatMessage(
                 text = "Hi! I'm your AI assistant. Let's design a custom automation agent together. Tell me, what task would you like to automate?",
-                isUser = false
+                isUser = false,
+                choices = listOf(
+                    "Daily Quotes ⏰",
+                    "WiFi Welcome Toast 📶",
+                    "Report Email Automator 📧",
+                    "Run Webhook Alert 🔗"
+                )
             )
         )
     }
@@ -130,6 +146,53 @@ fun AIChatCreatorScreen(
     LaunchedEffect(messages.size, isTyping, isKeyboardVisible) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
+    // Centralized message sending handler
+    val onSendMessage: (String) -> Unit = { text ->
+        val userText = text.trim()
+        if (userText.isNotEmpty()) {
+            messages.add(ChatMessage(text = userText, isUser = true))
+            isTyping = true
+            
+            scope.launch {
+                val promptBuilder = StringBuilder()
+                promptBuilder.append("System Instructions:\n$systemPrompt\n\n")
+                promptBuilder.append("Here is the prior conversation history with the user:\n\n")
+                messages.forEach {
+                    val role = if (it.isUser) "User" else "AI Assistant"
+                    promptBuilder.append("$role: ${it.text}\n")
+                }
+                promptBuilder.append("\nUser's latest message: $userText\n")
+                promptBuilder.append("Please formulate your helpful response following the guidelines:")
+
+                try {
+                    val responseText = withContext(Dispatchers.IO) {
+                        aiService.executeCustomPrompt(promptBuilder.toString())
+                    }
+                    
+                    // Parse options/bullets first
+                    val (cleanContentText, choices) = extractQuickReplies(responseText)
+                    
+                    // Detect if the response contains JSON
+                    val (cleanText, parsedConfig) = extractAndParseJson(cleanContentText)
+                    
+                    isTyping = false
+                    messages.add(
+                        ChatMessage(
+                            text = cleanText,
+                            isUser = false,
+                            isJson = parsedConfig != null,
+                            parsedData = parsedConfig,
+                            choices = choices
+                        )
+                    )
+                } catch (e: Exception) {
+                    isTyping = false
+                    messages.add(ChatMessage(text = "Sorry, I had an issue connecting. Let's try that again.", isUser = false))
+                }
+            }
         }
     }
 
@@ -190,8 +253,16 @@ fun AIChatCreatorScreen(
                 contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
             ) {
                 items(messages, key = { it.id }) { msg ->
+                    val isLatestMessage = messages.lastOrNull()?.id == msg.id
                     ChatBubble(
                         message = msg,
+                        isLatestMessage = isLatestMessage,
+                        onChoiceSelected = { choiceText ->
+                            // Submit the chosen option immediately as a chat response!
+                            // Strip any emoji endings for clear model comprehension if needed
+                            val cleanSubmission = choiceText.replace(Regex("[⏰📶📧🔗⚡🔔📞✨🌅☀️🌆🌌🚨⚠️💼]"), "").trim()
+                            onSendMessage(cleanSubmission)
+                        },
                         onSave = { config ->
                             scope.launch(Dispatchers.IO) {
                                 saveParsedConfig(database, config) {
@@ -242,9 +313,9 @@ fun AIChatCreatorScreen(
                                 .height(52.dp)
                         ) {
                             val suggestions = listOf(
-                                "Create a daily quote notification ⏰" to "Create a scheduled task that runs every day at 18:30 to send a custom inspirational quote notification to my phone.",
-                                "Notify me when WiFi connects 📶" to "Create an automation task that notifies me when I connect to WiFi with a custom welcome toast.",
-                                "Send email when notified 📧" to "I want to build an agent that triggers when I receive a specific system notification to send a notification report email."
+                                "Daily Quote Alert ⏰" to "Create a scheduled task that runs every day at 18:30 to send a custom inspirational quote notification to my phone.",
+                                "WiFi Welcome Msg 📶" to "Create an automation task that notifies me when I connect to WiFi with a custom welcome toast.",
+                                "Forward Email Trigger 📧" to "I want to build an agent that triggers when I receive a specific system notification to send a notification report email."
                             )
                             suggestions.forEach { (label, prompt) ->
                                 AssistChip(
@@ -290,43 +361,7 @@ fun AIChatCreatorScreen(
                                 val userText = inputMessage.trim()
                                 if (userText.isNotEmpty()) {
                                     inputMessage = ""
-                                    messages.add(ChatMessage(text = userText, isUser = true))
-                                    isTyping = true
-                                    
-                                    // Call Gemini API with complete chat context to remember conversation
-                                    scope.launch {
-                                        val promptBuilder = StringBuilder()
-                                        promptBuilder.append("System Instructions:\n$systemPrompt\n\n")
-                                        promptBuilder.append("Here is the prior conversation history with the user:\n\n")
-                                        messages.forEach {
-                                            val role = if (it.isUser) "User" else "AI Assistant"
-                                            promptBuilder.append("$role: ${it.text}\n")
-                                        }
-                                        promptBuilder.append("\nUser's latest message: $userText\n")
-                                        promptBuilder.append("Please formulate your helpful response following the guidelines:")
-
-                                        try {
-                                            val responseText = withContext(Dispatchers.IO) {
-                                                aiService.executeCustomPrompt(promptBuilder.toString())
-                                            }
-                                            
-                                            // Detect if the response contains JSON
-                                            val (cleanText, parsedConfig) = extractAndParseJson(responseText)
-                                            
-                                            isTyping = false
-                                            messages.add(
-                                                ChatMessage(
-                                                    text = cleanText,
-                                                    isUser = false,
-                                                    isJson = parsedConfig != null,
-                                                    parsedData = parsedConfig
-                                                )
-                                            )
-                                        } catch (e: Exception) {
-                                            isTyping = false
-                                            messages.add(ChatMessage(text = "Sorry, I had an issue connecting. Let's try that again.", isUser = false))
-                                        }
-                                    }
+                                    onSendMessage(userText)
                                 }
                             },
                             shape = CircleShape,
@@ -347,9 +382,12 @@ fun AIChatCreatorScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ChatBubble(
     message: ChatMessage,
+    isLatestMessage: Boolean,
+    onChoiceSelected: (String) -> Unit,
     onSave: (ParsedAgentConfig) -> Unit,
     onEdit: (ParsedAgentConfig) -> Unit
 ) {
@@ -435,6 +473,25 @@ fun ChatBubble(
             }
         }
 
+        // Render dynamic tapable choices if available and this is the latest message
+        if (message.choices != null && message.choices.isNotEmpty() && isLatestMessage) {
+            Spacer(modifier = Modifier.height(8.dp))
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 40.dp, end = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                message.choices.forEach { choice ->
+                    ChoiceChip(
+                        text = choice,
+                        onClick = { onChoiceSelected(choice) }
+                    )
+                }
+            }
+        }
+
         // Render Interactive Preview Card if JSON block was detected and parsed
         if (message.isJson && message.parsedData != null) {
             Spacer(modifier = Modifier.height(8.dp))
@@ -442,6 +499,43 @@ fun ChatBubble(
                 config = message.parsedData,
                 onSave = { onSave(message.parsedData) },
                 onEdit = { onEdit(message.parsedData) }
+            )
+        }
+    }
+}
+
+@Composable
+fun ChoiceChip(
+    text: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+        modifier = Modifier
+            .padding(vertical = 2.dp)
+            .heightIn(min = 36.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.2.sp
+                )
             )
         }
     }
@@ -631,6 +725,79 @@ private fun extractAndParseJson(text: String): Pair<String, ParsedAgentConfig?> 
         android.util.Log.e("AIChatCreatorScreen", "Error parsing agent JSON", e)
     }
     return Pair(text, null)
+}
+
+// Dynamic heuristic and explicit choice extraction parser
+private fun extractQuickReplies(text: String): Pair<String, List<String>> {
+    // 1. Strip the JSON block temporarily to avoid parsing any options inside the JSON definition
+    val startTag = "```json"
+    val endTag = "```"
+    val startIndex = text.indexOf(startTag)
+    val textToParseChoices = if (startIndex != -1) {
+        text.substring(0, startIndex)
+    } else {
+        text
+    }
+
+    val lines = textToParseChoices.split("\n")
+    val cleanLines = mutableListOf<String>()
+    val choices = mutableListOf<String>()
+
+    for (line in lines) {
+        val trimmed = line.trim()
+        if (trimmed.startsWith("[Option]") || trimmed.startsWith("[Choice]")) {
+            val optionText = trimmed.substringAfter("]").trim()
+            if (optionText.isNotEmpty()) {
+                choices.add(optionText)
+            }
+        } else if (trimmed.startsWith("- ") && trimmed.length < 40 && !trimmed.contains("`")) {
+            val optionText = trimmed.substring(2).trim()
+            // Only add if it's not a generic sentence and looks like a concrete choice
+            if (optionText.isNotEmpty() && (
+                optionText.all { it.isUpperCase() || it == '_' || it.isWhitespace() } ||
+                optionText == "Yes" || optionText == "No" || optionText.startsWith("WiFi") ||
+                optionText.contains("Daily") || optionText.contains("Weekly") || optionText.contains("Minute")
+            )) {
+                choices.add(optionText)
+            } else {
+                cleanLines.add(line)
+            }
+        } else {
+            cleanLines.add(line)
+        }
+    }
+
+    // Reconstruct the text (keeping JSON if it was stripped)
+    val restoredText = if (startIndex != -1) {
+        val jsonAndAfter = text.substring(startIndex)
+        cleanLines.joinToString("\n") + "\n" + jsonAndAfter
+    } else {
+        cleanLines.joinToString("\n")
+    }
+
+    // Heuristics: if no explicit [Option] or bullets match, let's inject helpful suggestions based on semantic search of the text
+    if (choices.isEmpty()) {
+        val lowercaseText = textToParseChoices.lowercase()
+        if (lowercaseText.contains("trigger") || lowercaseText.contains("signal")) {
+            if (lowercaseText.contains("schedule") || lowercaseText.contains("time") || lowercaseText.contains("manual")) {
+                choices.addAll(listOf("SCHEDULE ⏰", "MANUAL ⚡", "NOTIFICATION_RECEIVED 🔔", "CALL_STATE 📞"))
+            }
+        } else if (lowercaseText.contains("action") || lowercaseText.contains("should be taken")) {
+            if (lowercaseText.contains("ai") || lowercaseText.contains("notification") || lowercaseText.contains("email")) {
+                choices.addAll(listOf("AI_GENERATE_AND_NOTIFY ✨", "SHOW_NOTIFICATION 🔔", "SEND_EMAIL 📧", "WEBHOOK 🔗", "OPEN_APP 📱"))
+            }
+        } else if (lowercaseText.contains("wifi") || lowercaseText.contains("network") || lowercaseText.contains("condition")) {
+            choices.addAll(listOf("WiFi Only 📶", "Any Network 🌐"))
+        } else if (lowercaseText.contains("days") || lowercaseText.contains("week")) {
+            choices.addAll(listOf("MON, TUE, WED, THU, FRI (Weekdays)", "MON, TUE, WED, THU, FRI, SAT, SUN (Every day)", "SAT, SUN (Weekends)"))
+        } else if (lowercaseText.contains("hours") || lowercaseText.contains("time of day") || lowercaseText.contains("scheduled time")) {
+            choices.addAll(listOf("08:00 (Morning) 🌅", "12:00 (Noon) ☀️", "18:30 (Evening) 🌆", "22:00 (Night) 🌌"))
+        } else if (lowercaseText.contains("keyword") || lowercaseText.contains("incoming notification")) {
+            choices.addAll(listOf("Urgent 🚨", "Alert ⚠️", "Meeting 💼", "Any Notification"))
+        }
+    }
+
+    return Pair(restoredText, choices.distinct())
 }
 
 // Database persistent saver matching Section 10.2 schema payload exactly
