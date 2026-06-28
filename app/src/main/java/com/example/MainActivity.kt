@@ -13,6 +13,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import com.example.core.google.GoogleApiHelper
+import com.example.core.google.TokenResponse
 import com.example.core.storage.AppDatabase
 import com.example.core.storage.PreferencesManager
 import com.example.task.TaskRegistry
@@ -22,6 +24,8 @@ import com.example.ui.screens.TaskCreatorScreen
 import com.example.ui.screens.TaskSettingsScreen
 import com.example.ui.screens.GlobalSettingsScreen
 import com.example.ui.screens.AgentDetailScreen
+import com.example.ui.screens.PromptManagerScreen
+import com.example.ui.screens.BackupScreen
 import com.example.ui.theme.MyApplicationTheme
 
 enum class Screen {
@@ -31,7 +35,9 @@ enum class Screen {
     HISTORY,
     GLOBAL_SETTINGS,
     AGENT_DETAIL,
-    CHAT_CREATOR
+    CHAT_CREATOR,
+    PROMPTS,
+    BACKUP
 }
 
 class MainActivity : ComponentActivity() {
@@ -68,6 +74,38 @@ class MainActivity : ComponentActivity() {
 
                     // Process incoming intent actions reactively
                     LaunchedEffect(intent) {
+                        val uri = intent?.data
+                        val isCustomScheme = uri != null && uri.scheme == "com.aistudio.agentivetaskai"
+                        val isHttpsRedirect = uri != null && uri.scheme == "https" && (uri.host == "com.aistudio.agentivetaskai" || uri.host == "agentivetaskai.com")
+                        val isLocalhostRedirect = uri != null && uri.scheme == "http" && (uri.host == "localhost" || uri.host == "127.0.0.1")
+                        
+                        if (uri != null && (isCustomScheme || isHttpsRedirect || isLocalhostRedirect)) {
+                            val code = uri.getQueryParameter("code")
+                            val error = uri.getQueryParameter("error")
+                            if (code != null) {
+                                android.widget.Toast.makeText(applicationContext, "Authorization code received! Exchanging token...", android.widget.Toast.LENGTH_LONG).show()
+                                val helper = GoogleApiHelper.getInstance(applicationContext)
+                                val response = helper.exchangeAuthorizationCode(code)
+                                when (response) {
+                                    is TokenResponse.Success -> {
+                                        helper.connectAccount(
+                                            context = applicationContext,
+                                            email = response.email,
+                                            accessToken = response.accessToken,
+                                            refreshToken = response.refreshToken
+                                        )
+                                        android.widget.Toast.makeText(applicationContext, "Connected to ${response.email} successfully!", android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                    is TokenResponse.Error -> {
+                                        android.widget.Toast.makeText(applicationContext, "Authentication failed: ${response.message}", android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            } else if (error != null) {
+                                android.widget.Toast.makeText(applicationContext, "Authorization cancelled or failed: $error", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                            intent?.data = null // Clear to prevent repeat triggers on configuration change
+                        }
+
                         val trigger = intent?.getStringExtra("ACTION_TRIGGER")
                         val contactName = intent?.getStringExtra("PARAM_NAME") ?: "Caller"
                         if (trigger != null) {
@@ -213,8 +251,18 @@ class MainActivity : ComponentActivity() {
                             GlobalSettingsScreen(
                                 preferencesManager = preferencesManager,
                                 database = database,
-                                onBack = { currentScreen = Screen.DASHBOARD }
+                                onBack = { currentScreen = Screen.DASHBOARD },
+                                onNavigateToPrompts = { currentScreen = Screen.PROMPTS },
+                                onNavigateToBackup = { currentScreen = Screen.BACKUP }
                             )
+                        }
+
+                        Screen.PROMPTS -> {
+                            PromptManagerScreen(onBack = { currentScreen = Screen.GLOBAL_SETTINGS })
+                        }
+
+                        Screen.BACKUP -> {
+                            BackupScreen(onBack = { currentScreen = Screen.GLOBAL_SETTINGS })
                         }
                     }
                 }

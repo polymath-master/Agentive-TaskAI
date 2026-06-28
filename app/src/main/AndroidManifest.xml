@@ -28,6 +28,18 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            
+            <!-- Google OAuth 2.0 Redirect URI Intent Filter -->
+            <intent-filter android:label="Google OAuth Callback">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.aistudio.agentivetaskai" android:host="oauth2redirect" />
+                <data android:scheme="https" android:host="com.aistudio.agentivetaskai" android:path="/oauth2redirect" />
+                <data android:scheme="https" android:host="agentivetaskai.com" android:path="/oauth2redirect" />
+                <data android:scheme="http" android:host="localhost" android:path="/oauth2redirect" />
+                <data android:scheme="http" android:host="127.0.0.1" android:path="/oauth2redirect" />
+            </intent-filter>
         </activity>
 
         <!-- Intercept Call / Notification Alerts service -->

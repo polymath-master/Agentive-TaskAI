@@ -7,9 +7,12 @@ import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -21,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.BuildConfig
 import com.example.core.permissions.PermissionUtils
 import com.example.core.storage.PreferencesManager
 import com.example.core.storage.AppDatabase
@@ -35,7 +39,9 @@ import org.json.JSONObject
 fun GlobalSettingsScreen(
     preferencesManager: PreferencesManager,
     database: AppDatabase,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateToPrompts: () -> Unit,
+    onNavigateToBackup: () -> Unit
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -43,8 +49,15 @@ fun GlobalSettingsScreen(
 
     // Google Workspace Connection State
     val googleApiHelper = remember { GoogleApiHelper.getInstance(context) }
-    var isGoogleConnected by remember { mutableStateOf(googleApiHelper.isUserAuthenticated(context)) }
-    var googleConnectedEmail by remember { mutableStateOf(googleApiHelper.getConnectedEmail(context)) }
+    val isGoogleConnectedState by googleApiHelper.connectionState.collectAsState()
+    var isGoogleConnected by remember { mutableStateOf(false) }
+    var googleConnectedEmail by remember { mutableStateOf("") }
+    
+    LaunchedEffect(isGoogleConnectedState) {
+        isGoogleConnected = isGoogleConnectedState
+        googleConnectedEmail = googleApiHelper.getConnectedEmail(context)
+    }
+    
     var showAuthConsentDialog by remember { mutableStateOf(false) }
 
     // Gemini API Key state
@@ -93,21 +106,93 @@ fun GlobalSettingsScreen(
     }
 
     if (showAuthConsentDialog) {
-        GoogleAuthConsentDialog(
-            onDismiss = { showAuthConsentDialog = false },
-            onAuthorize = { authorizedEmail, accessToken, refreshToken ->
-                googleApiHelper.connectAccount(
-                    context = context,
-                    email = authorizedEmail,
-                    accessToken = accessToken,
-                    refreshToken = refreshToken
-                )
-                isGoogleConnected = true
-                googleConnectedEmail = authorizedEmail
+        val clientId = BuildConfig.GOOGLE_CLIENT_ID
+        val isConfigured = clientId.isNotEmpty() && clientId != "YOUR_GOOGLE_CLIENT_ID" && clientId != "GOOGLE_CLIENT_ID"
+        
+        if (isConfigured) {
+            LaunchedEffect(Unit) {
+                try {
+                    val scopes = listOf(
+                        "https://www.googleapis.com/auth/gmail.send",
+                        "https://www.googleapis.com/auth/spreadsheets.readonly",
+                        "https://www.googleapis.com/auth/documents.readonly"
+                    ).joinToString(" ")
+
+                    val authUrl = "https://accounts.google.com/o/oauth2/v2/auth?" +
+                        "client_id=$clientId" +
+                        "&redirect_uri=${BuildConfig.GOOGLE_REDIRECT_URI}" +
+                        "&response_type=code" +
+                        "&scope=${android.net.Uri.encode(scopes)}" +
+                        "&access_type=offline" +
+                        "&prompt=consent"
+
+                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(authUrl))
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Failed to launch browser: ${e.message}", Toast.LENGTH_LONG).show()
+                }
                 showAuthConsentDialog = false
-                Toast.makeText(context, "Google Workspace successfully authorized!", Toast.LENGTH_LONG).show()
             }
-        )
+        } else {
+            AlertDialog(
+                onDismissRequest = { showAuthConsentDialog = false },
+                icon = { Icon(imageVector = Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                title = { Text("Google OAuth 2.0 Setup", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "To enable real-time Google authentication, please configure your OAuth 2.0 client credentials first.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(text = "Step-by-step Setup:", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                        
+                        Column(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(8.dp))
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("1. In Google Cloud Console, create an OAuth 2.0 Client ID.", style = MaterialTheme.typography.labelSmall)
+                            Text("2. Set Authorized Redirect URI depending on Client Type:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                            Text("• Desktop / Android App type:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "com.aistudio.agentivetaskai://oauth2redirect",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.background(MaterialTheme.colorScheme.surface).padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                            Text("• Web Application type (with registered domain):", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "https://agentivetaskai.com/oauth2redirect",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.background(MaterialTheme.colorScheme.surface).padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                            Text("• Web Application type (without domain - official Google loopback):", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "http://localhost/oauth2redirect",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.background(MaterialTheme.colorScheme.surface).padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                            Text("3. In AI Studio, open the Secrets Panel (🔑 icon) and configure:", style = MaterialTheme.typography.labelSmall)
+                            Text("   • GOOGLE_CLIENT_ID", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            Text("   • GOOGLE_CLIENT_SECRET", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            Text("   • GOOGLE_REDIRECT_URI", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = { showAuthConsentDialog = false }) {
+                        Text("Got it")
+                    }
+                }
+            )
+        }
     }
 
     Scaffold(
@@ -388,10 +473,11 @@ fun GlobalSettingsScreen(
                 }
             }
 
-            // Section 2: RSS Feed Manager
+            // Section 2: Utilities (Prompt Library & Backup System)
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.outlinedCardBorder()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(
@@ -399,116 +485,75 @@ fun GlobalSettingsScreen(
                         modifier = Modifier.padding(bottom = 8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.RssFeed,
+                            imageVector = Icons.Default.Build,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Editorial News Feeds",
+                            text = "System Tools & Customization",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                     }
 
                     Text(
-                        text = "Customize the XML RSS feeds compiled by the News Agent on background runs.",
+                        text = "Customize your automation prompts with Gemini AI or manage system database backups and cloud synchronization.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 12.dp)
+                        modifier = Modifier.padding(bottom = 16.dp)
                     )
 
-                    // Add new Feed URL block
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
+                    // Button 1: Prompt Library
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onNavigateToPrompts() }
+                            .padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
                     ) {
-                        OutlinedTextField(
-                            value = newFeedInput,
-                            onValueChange = { newFeedInput = it },
-                            placeholder = { Text("Add new RSS XML feed URL") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                val urlStr = newFeedInput.trim()
-                                val isUrlValid = Patterns.WEB_URL.matcher(urlStr).matches()
-                                if (urlStr.isBlank()) {
-                                    Toast.makeText(context, "URL is empty!", Toast.LENGTH_SHORT).show()
-                                } else if (!isUrlValid) {
-                                    Toast.makeText(context, "Please provide a valid URL format!", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    coroutineScope.launch {
-                                        val updatedSet = rssFeeds.toMutableSet()
-                                        updatedSet.add(urlStr)
-                                        preferencesManager.saveRssFeeds(updatedSet)
-                                        newFeedInput = ""
-                                        Toast.makeText(context, "XML Feed added!", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(imageVector = Icons.Default.Add, contentDescription = "Add URL")
+                            Icon(
+                                imageVector = Icons.Default.Lightbulb,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Prompt Manager 💡", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                Text("CRUD library of prompts with Gemini AI auto-improve helper.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            }
+                            Icon(imageVector = Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    HorizontalDivider()
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Text(
-                        text = "Active Syndication Sources:",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    if (rssFeeds.isEmpty()) {
-                        Text(
-                            text = "No syndication feeds configured currently. Feed briefs will run empty.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(8.dp)
-                        )
-                    } else {
-                        rssFeeds.forEach { feedUrl ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = feedUrl,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(
-                                    onClick = {
-                                        coroutineScope.launch {
-                                            val updatedSet = rssFeeds.toMutableSet()
-                                            updatedSet.remove(feedUrl)
-                                            preferencesManager.saveRssFeeds(updatedSet)
-                                            Toast.makeText(context, "Feed removed.", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Delete RSS item",
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                }
+                    // Button 2: Backup Manager
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onNavigateToBackup() }
+                            .padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Backup,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Backup & Restore 💾", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                Text("Export configs to JSON or synchronize to a secure remote storage.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                             }
+                            Icon(imageVector = Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
                         }
                     }
                 }
@@ -901,70 +946,52 @@ fun GlobalSettingsScreen(
 }
 
 @Composable
+fun GoogleColoredLogo() {}
+
+@Composable
 fun GoogleAuthConsentDialog(
     onDismiss: () -> Unit,
     onAuthorize: (String, String, String) -> Unit
 ) {
     val context = LocalContext.current
-    var step by remember { mutableStateOf(1) }
-    var emailInput by remember { mutableStateOf("") }
-    var passwordInput by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
+    var step by remember { mutableStateOf(1) } // 1: Choose Account, 2: Custom Email Input, 3: Redirecting, 4: Scope Consent, 5: Token Exchange/Success
+    var selectedEmail by remember { mutableStateOf("rahmanshuvo.4360@gmail.com") }
+    var customEmailInput by remember { mutableStateOf("") }
+    var emailError by remember { mutableStateOf(false) }
 
     var selectGmail by remember { mutableStateOf(true) }
     var selectSheets by remember { mutableStateOf(true) }
     var selectDocs by remember { mutableStateOf(true) }
 
-    var emailError by remember { mutableStateOf(false) }
     var exchangeLogs by remember { mutableStateOf<List<String>>(emptyList()) }
     val coroutineScope = rememberCoroutineScope()
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
+            // Chrome-like Secure Browser Header Frame
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                    .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.Start
             ) {
-                // Animated Custom Google Brand "G" Icon
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = androidx.compose.foundation.shape.CircleShape
-                        )
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                            shape = androidx.compose.foundation.shape.CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CloudQueue,
-                        contentDescription = "Google Cloud Service",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Column {
-                    Text(
-                        text = when (step) {
-                            1 -> "Google Account Sign In"
-                            2 -> "Connecting..."
-                            3 -> "Workspace Consent"
-                            else -> "Exchanging Tokens"
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Step $step of 4",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = "Secure Connection",
+                    tint = Color(0xFF34A853),
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "accounts.google.com/o/oauth2/v2/auth",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
             }
         },
         text = {
@@ -976,138 +1003,333 @@ fun GoogleAuthConsentDialog(
             ) {
                 when (step) {
                     1 -> {
-                        Text(
-                            text = "To authorize automation agents with your Google Workspace, sign in below with your Google Account.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        OutlinedTextField(
-                            value = emailInput,
-                            onValueChange = {
-                                emailInput = it
-                                emailError = false
-                            },
-                            label = { Text("Email or phone") },
-                            singleLine = true,
-                            isError = emailError,
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("username@gmail.com") },
-                            supportingText = {
-                                if (emailError) {
-                                    Text("Enter a valid Google email address", color = MaterialTheme.colorScheme.error)
-                                } else {
-                                    Text("Used only for secure automation scheduling", style = MaterialTheme.typography.labelSmall)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.White)
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            GoogleColoredLogo()
+                            
+                            Text(
+                                text = "Sign in with Google",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Normal,
+                                color = Color(0xFF202124)
+                            )
+                            
+                            Text(
+                                text = "Choose an account to continue to TaskAI",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFF5F6368),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            
+                            Spacer(modifier = Modifier.height(6.dp))
+                            
+                            // User Account Row (Primary on Device)
+                            Surface(
+                                onClick = {
+                                    selectedEmail = "rahmanshuvo.4360@gmail.com"
+                                    step = 3 // Connect / Redirect
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                shadowElevation = 1.dp,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color.White)
+                                        .border(1.dp, Color(0xFFDADCE0), RoundedCornerShape(8.dp))
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .background(Color(0xFF4285F4), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "R",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodyLarge
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text(
+                                            text = "Rahman Shuvo",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFF3C4043)
+                                        )
+                                        Text(
+                                            text = "rahmanshuvo.4360@gmail.com",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color(0xFF5F6368)
+                                        )
+                                    }
                                 }
                             }
-                        )
-
-                        OutlinedTextField(
-                            value = passwordInput,
-                            onValueChange = { passwordInput = it },
-                            label = { Text("Password") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            visualTransformation = PasswordVisualTransformation(),
-                            placeholder = { Text("Google Account Password") },
-                            supportingText = {
-                                Text("Secured on-device via Android Keystore", style = MaterialTheme.typography.labelSmall)
+                            
+                            // Use Another Account Button
+                            Surface(
+                                onClick = {
+                                    step = 2 // Custom input
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                shadowElevation = 1.dp,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color.White)
+                                        .border(1.dp, Color(0xFFDADCE0), RoundedCornerShape(8.dp))
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AccountCircle,
+                                        contentDescription = "Another Account",
+                                        tint = Color(0xFF5F6368),
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = "Use another account",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFF1A73E8)
+                                    )
+                                }
                             }
-                        )
+                        }
                     }
 
                     2 -> {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .background(Color.White)
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            GoogleColoredLogo()
+                            
+                            Text(
+                                text = "Sign in",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = Color(0xFF202124)
+                            )
+                            
+                            Text(
+                                text = "to continue to TaskAI",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFF5F6368)
+                            )
+                            
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            OutlinedTextField(
+                                value = customEmailInput,
+                                onValueChange = {
+                                    customEmailInput = it
+                                    emailError = false
+                                },
+                                label = { Text("Email or phone") },
+                                singleLine = true,
+                                isError = emailError,
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text("username@gmail.com") },
+                                supportingText = {
+                                    if (emailError) {
+                                        Text("Enter a valid Google email address", color = MaterialTheme.colorScheme.error)
+                                    } else {
+                                        Text("Security Note: TaskAI will never ask for your password.", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            )
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TextButton(onClick = { step = 1 }) {
+                                    Text("Back", color = Color(0xFF1A73E8))
+                                }
+                                Button(
+                                    onClick = {
+                                        if (customEmailInput.isBlank() || !Patterns.EMAIL_ADDRESS.matcher(customEmailInput).matches()) {
+                                            emailError = true
+                                        } else {
+                                            selectedEmail = customEmailInput
+                                            step = 3
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8))
+                                ) {
+                                    Text("Next", color = Color.White)
+                                }
+                            }
+                        }
+                    }
+
+                    3 -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.White)
                                 .padding(vertical = 24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             CircularProgressIndicator(
                                 strokeWidth = 3.dp,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = Color(0xFF1A73E8),
                                 modifier = Modifier.size(48.dp)
                             )
                             Text(
-                                text = "Contacting Google OAuth servers...",
+                                text = "Opening secure browser session...",
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF202124)
                             )
                             Text(
-                                text = "Initiating safe sandbox redirect to accounts.google.com/o/oauth2/v2/auth",
+                                text = "Establishing secure connection with accounts.google.com",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline,
+                                color = Color(0xFF5F6368),
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
                         }
 
                         LaunchedEffect(Unit) {
-                            kotlinx.coroutines.delay(1500)
-                            step = 3
+                            kotlinx.coroutines.delay(1200)
+                            step = 4
                         }
                     }
 
-                    3 -> {
-                        Text(
-                            text = "Agentive TaskAI wants to access your Google Account. Please confirm granular consent scopes below:",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                    4 -> {
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { selectGmail = !selectGmail }
-                                .padding(vertical = 4.dp)
+                                .background(Color.White)
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Checkbox(checked = selectGmail, onCheckedChange = { selectGmail = it })
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text("Send email on your behalf (Gmail)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                Text("https://www.googleapis.com/auth/gmail.send", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            GoogleColoredLogo()
+                            
+                            Text(
+                                text = "TaskAI wants to access your Google Account",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color(0xFF202124),
+                                fontWeight = FontWeight.Medium
+                            )
+                            
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFFF1F3F4), RoundedCornerShape(16.dp))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .background(Color(0xFF4285F4), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("R", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = selectedEmail,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF3C4043),
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
-                        }
+                            
+                            Text(
+                                text = "TaskAI is requesting granular authorization to read and write scheduled background automation tasks. Check scopes to grant:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF5F6368)
+                            )
 
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectSheets = !selectSheets }
-                                .padding(vertical = 4.dp)
-                        ) {
-                            Checkbox(checked = selectSheets, onCheckedChange = { selectSheets = it })
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text("Read Google Sheets spreadsheets", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                Text(".../auth/spreadsheets.readonly", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            HorizontalDivider(color = Color(0xFFDADCE0))
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectGmail = !selectGmail }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Checkbox(
+                                    checked = selectGmail,
+                                    onCheckedChange = { selectGmail = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1A73E8))
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text("Send email on your behalf (Gmail)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = Color(0xFF3C4043))
+                                    Text("https://www.googleapis.com/auth/gmail.send", style = MaterialTheme.typography.labelSmall, color = Color(0xFF5F6368))
+                                }
                             }
-                        }
 
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectDocs = !selectDocs }
-                                .padding(vertical = 4.dp)
-                        ) {
-                            Checkbox(checked = selectDocs, onCheckedChange = { selectDocs = it })
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text("Read Google Docs documents", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                Text(".../auth/documents.readonly", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectSheets = !selectSheets }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Checkbox(
+                                    checked = selectSheets,
+                                    onCheckedChange = { selectSheets = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1A73E8))
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text("Read Google Sheets spreadsheets", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = Color(0xFF3C4043))
+                                    Text(".../auth/spreadsheets.readonly", style = MaterialTheme.typography.labelSmall, color = Color(0xFF5F6368))
+                                }
                             }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectDocs = !selectDocs }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Checkbox(
+                                    checked = selectDocs,
+                                    onCheckedChange = { selectDocs = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1A73E8))
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text("Read Google Docs documents", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = Color(0xFF3C4043))
+                                    Text(".../auth/documents.readonly", style = MaterialTheme.typography.labelSmall, color = Color(0xFF5F6368))
+                                }
+                            }
+
+                            HorizontalDivider(color = Color(0xFFDADCE0))
+
+                            Text(
+                                text = "By clicking Allow, you agree that TaskAI can sync preferences to Firebase and perform secure Workspace calls on your behalf.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF5F6368)
+                            )
                         }
-
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-                        Text(
-                            text = "By clicking Allow, you authorize this application to sync task preferences to Firebase and perform secure Workspace calls on your behalf.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
                     }
 
                     else -> {
@@ -1121,19 +1343,18 @@ fun GoogleAuthConsentDialog(
                                 fontWeight = FontWeight.Bold
                             )
                             
-                            // Sleek console log terminal
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(130.dp)
                                     .background(
                                         color = MaterialTheme.colorScheme.surfaceVariant,
-                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
+                                        shape = RoundedCornerShape(6.dp)
                                     )
                                     .border(
                                         width = 1.dp,
                                         color = MaterialTheme.colorScheme.outlineVariant,
-                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
+                                        shape = RoundedCornerShape(6.dp)
                                     )
                                     .padding(8.dp)
                             ) {
@@ -1184,13 +1405,12 @@ fun GoogleAuthConsentDialog(
                                 kotlinx.coroutines.delay(600)
                                 exchangeLogs = exchangeLogs + listOf(
                                     "> Syncing configurations to remote Firebase Cloud...",
-                                    "> Connected with Firestore path: /users/${emailInput.replace(".", "_")}"
+                                    "> Connected with Firestore path: /users/${selectedEmail.replace(".", "_")}"
                                 )
                                 
-                                // Sync securely with Firestore programmatically
                                 com.example.core.firebase.FirebaseHelper.syncUserPreferences(
                                     context = context,
-                                    email = emailInput,
+                                    email = selectedEmail,
                                     preferences = mapOf(
                                         "isGoogleConnected" to true,
                                         "gmailScope" to selectGmail,
@@ -1213,41 +1433,29 @@ fun GoogleAuthConsentDialog(
         },
         confirmButton = {
             when (step) {
-                1 -> {
-                    Button(
-                        onClick = {
-                            if (emailInput.isBlank() || !Patterns.EMAIL_ADDRESS.matcher(emailInput).matches()) {
-                                emailError = true
-                            } else {
-                                step = 2
-                            }
-                        }
-                    ) {
-                        Text("Next")
-                    }
-                }
-
-                3 -> {
-                    Button(
-                        onClick = {
-                            step = 4
-                        }
-                    ) {
-                        Text("Allow")
-                    }
-                }
-
                 4 -> {
+                    Button(
+                        onClick = {
+                            step = 5
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8))
+                    ) {
+                        Text("Allow", color = Color.White)
+                    }
+                }
+
+                5 -> {
                     val isComplete = exchangeLogs.any { it.contains("SECURED") }
                     Button(
                         enabled = isComplete,
                         onClick = {
                             val tokenAccess = "ya29.sandboxed-token-${System.currentTimeMillis()}"
                             val tokenRefresh = "1//mock-refresh-token-sandboxed-${System.currentTimeMillis()}"
-                            onAuthorize(emailInput, tokenAccess, tokenRefresh)
-                        }
+                            onAuthorize(selectedEmail, tokenAccess, tokenRefresh)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1a73e8))
                     ) {
-                        Text("Finish")
+                        Text("Finish", color = Color.White)
                     }
                 }
 
@@ -1255,13 +1463,13 @@ fun GoogleAuthConsentDialog(
             }
         },
         dismissButton = {
-            if (step == 1 || step == 3) {
+            if (step == 1 || step == 2 || step == 4) {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel")
+                    Text("Cancel", color = Color(0xFF1a73e8))
                 }
-            } else if (step == 4) {
+            } else if (step == 5) {
                 TextButton(onClick = onDismiss) {
-                    Text("Close")
+                    Text("Close", color = Color(0xFF1a73e8))
                 }
             }
         }

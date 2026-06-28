@@ -15,11 +15,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.example.core.ai.AIService
 import com.example.core.storage.AppDatabase
 import com.example.core.storage.PreferencesManager
+import com.example.core.storage.ResultStateHolder
 import com.example.core.storage.TaskHistory
 import com.example.task.*
 import com.example.task.userdefined.UserDefinedAgentTask
@@ -41,14 +41,14 @@ fun DashboardScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    // Tab state: 0 = Results, 1 = Agents
+    var selectedTab by remember { mutableIntStateOf(0) }
+
     // Load theme configuration
     val isDarkTheme by preferencesManager.isDarkThemeFlow.collectAsState(initial = true)
 
     // Load list of user-created custom tasks from Room
     val userTasksDb by database.taskDao().getAllUserTasksFlow().collectAsState(initial = emptyList())
-
-    // Load recently cached news articles
-    val cachedArticles by database.taskDao().getAllArticlesFlow().collectAsState(initial = emptyList())
 
     // Combine built-in and user-defined tasks
     val registry = remember { TaskRegistry(context) }
@@ -63,15 +63,22 @@ fun DashboardScreen(
 
     // Active instant execution status holder
     var runningTaskId by remember { mutableStateOf<String?>(null) }
-    var aiOutputDisplay by remember { mutableStateOf<String?>(null) }
+
+    // Read reactive latest results state
+    val latestAgentId by ResultStateHolder.getLastAgentIdFlow(context).collectAsState(initial = null)
+    val latestOutputData by ResultStateHolder.getLastOutputDataFlow(context).collectAsState(initial = null)
 
     Scaffold(
         topBar = {
             LargeTopAppBar(
                 title = {
                     Column {
-                        Text("Agentive TaskAI", fontWeight = FontWeight.ExtraBold)
-                        Text("Modular Personal Automation Assistant", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Text("Agentive TaskAI 🔮", fontWeight = FontWeight.ExtraBold)
+                        Text(
+                            text = if (selectedTab == 0) "Latest Execution Results" else "My Automated AI Agents",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 },
                 actions = {
@@ -92,248 +99,265 @@ fun DashboardScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                colors = TopAppBarDefaults.largeTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
             )
         },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onNavigateToCreator,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
+        bottomBar = {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
             ) {
-                Icon(imageVector = Icons.Default.Add, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Create Custom Agent", fontWeight = FontWeight.Bold)
+                NavigationBarItem(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    icon = { Icon(imageVector = Icons.Default.Analytics, contentDescription = "Results") },
+                    label = { Text("Results", fontWeight = FontWeight.Bold) }
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    icon = { Icon(imageVector = Icons.Default.SmartToy, contentDescription = "Agents") },
+                    label = { Text("Agents", fontWeight = FontWeight.Bold) }
+                )
+            }
+        },
+        floatingActionButton = {
+            if (selectedTab == 1) {
+                ExtendedFloatingActionButton(
+                    onClick = onNavigateToCreator,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) {
+                    Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Create Custom Agent", fontWeight = FontWeight.Bold)
+                }
             }
         }
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(12.dp)
         ) {
-            // AI Instant Execution Output Shimmer/Overlay panel
-            AnimatedVisibility(
-                visible = aiOutputDisplay != null,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                    border = CardDefaults.outlinedCardBorder()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row {
-                                Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = "AI Result", tint = MaterialTheme.colorScheme.primary)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("AI Assistant Generation", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            }
-                            IconButton(onClick = { aiOutputDisplay = null }) {
-                                Icon(imageVector = Icons.Default.Close, contentDescription = "Close panel")
-                            }
+            when (selectedTab) {
+                0 -> {
+                    // --- RESULTS TAB ---
+                    if (latestAgentId != null && latestOutputData != null) {
+                        val activeTask = remember(latestAgentId, compiledTasksList) {
+                            compiledTasksList.find { it.metadata.id == latestAgentId }
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = aiOutputDisplay ?: "",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
-            }
 
-            // Modular Task list header
-            Text(
-                text = "Automated AI Agents",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Black,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-
-            // Categorized Lists scroll context
-            LazyColumn(
-                modifier = Modifier.weight(1f)
-            ) {
-                if (cachedArticles.isNotEmpty()) {
-                    item {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            // Header showing which agent produced this result
+                            Surface(
+                                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
                                 Row(
-                                    verticalAlignment = Alignment.CenterVertically
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Newspaper,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = activeTask?.metadata?.icon ?: Icons.Default.SmartToy,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "Output: ${activeTask?.metadata?.name ?: "Custom Agent"}",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                                        )
+                                    }
+                                    
                                     Text(
-                                        "Recent Syndicated Digests",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
+                                        text = "Interactive",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(start = 8.dp)
                                     )
                                 }
-                                Text(
-                                    "Showing last cached insights from your registered RSS feeds.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
-                                )
+                            }
 
-                                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-                                cachedArticles.take(3).forEach { article ->
-                                    Card(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 4.dp)
-                                            .clickable {
-                                                try {
-                                                    uriHandler.openUri(article.link)
-                                                } catch (e: Exception) {
-                                                    // Ignore invalid link formats
+                            // Render the active task's custom result view!
+                            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                if (activeTask != null) {
+                                    activeTask.ResultView(
+                                        outputData = latestOutputData!!,
+                                        onAction = { action ->
+                                            when (action) {
+                                                is AgentAction.OpenUrl -> {
+                                                    try {
+                                                        val intent = android.content.Intent(
+                                                            android.content.Intent.ACTION_VIEW,
+                                                            android.net.Uri.parse(action.url)
+                                                        )
+                                                        context.startActivity(intent)
+                                                    } catch (e: Exception) {
+                                                        Toast.makeText(context, "Cannot open link: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                                is AgentAction.SaveNote -> {
+                                                    Toast.makeText(context, "Note Saved: ${action.title}", Toast.LENGTH_SHORT).show()
+                                                }
+                                                is AgentAction.PageChanged -> {
+                                                    // Handle ebook page offsets if applicable
+                                                }
+                                                else -> {
+                                                    Toast.makeText(context, "Action: $action", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    )
+                                } else {
+                                    // Fallback to default result view
+                                    DefaultResultView(
+                                        outputData = latestOutputData!!,
+                                        onAction = {}
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        // Empty State Results
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Analytics,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(72.dp)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "No Agent Executions Yet",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Run any built-in or custom agent from the 'Agents' tab, and their rich outputs will display here.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(24.dp))
+                                Button(onClick = { selectedTab = 1 }) {
+                                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("View Active Agents")
+                                }
+                            }
+                        }
+                    }
+                }
+                1 -> {
+                    // --- AGENTS TAB ---
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 12.dp)
+                    ) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 80.dp)
+                        ) {
+                            groupedCategories.forEach { category ->
+                                val filtered = compiledTasksList.filter { it.metadata.category == category }
+                                if (filtered.isNotEmpty()) {
+                                    item {
+                                        CategoryDivider(category)
+                                    }
+                                    items(filtered) { agent ->
+                                        val isUserDefined = agent.metadata.id.startsWith("user_")
+                                        AgentInteractionCard(
+                                            agent = agent,
+                                            preferencesManager = preferencesManager,
+                                            isRunning = runningTaskId == agent.metadata.id,
+                                            onRunNow = {
+                                                runningTaskId = agent.metadata.id
+                                                coroutineScope.launch {
+                                                    val runResult = withContext(Dispatchers.IO) {
+                                                        try {
+                                                            val pm = preferencesManager
+                                                            val vals = mapOf(
+                                                                "gmail_user_email" to pm.gmailUserEmailFlow.first(),
+                                                                "sheet_url" to pm.sheetUrlFlow.first(),
+                                                                "template_doc_url" to pm.templateDocUrlFlow.first()
+                                                            )
+                                                            agent.execute(context, TaskSettings(vals))
+                                                        } catch (e: Exception) {
+                                                            TaskResult.Error(e.localizedMessage ?: "execution error")
+                                                        }
+                                                    }
+
+                                                    // Store run history
+                                                    withContext(Dispatchers.IO) {
+                                                        database.taskDao().insertHistory(
+                                                            TaskHistory(
+                                                                taskId = agent.metadata.id,
+                                                                taskName = agent.metadata.name,
+                                                                status = if (runResult is TaskResult.Success) "SUCCESS" else "ERROR",
+                                                                message = when (runResult) {
+                                                                    is TaskResult.Success -> runResult.output ?: "Manual trigger executed."
+                                                                    is TaskResult.Error -> runResult.message
+                                                                    is TaskResult.Cancelled -> "Cancelled."
+                                                                }
+                                                            )
+                                                        )
+                                                    }
+
+                                                    runningTaskId = null
+                                                    when (runResult) {
+                                                        is TaskResult.Success -> {
+                                                            Toast.makeText(context, "Agent completed successfully!", Toast.LENGTH_SHORT).show()
+                                                            // Auto switch to Results tab to view output!
+                                                            selectedTab = 0
+                                                        }
+                                                        is TaskResult.Error -> {
+                                                            Toast.makeText(context, "Error: ${runResult.message}", Toast.LENGTH_LONG).show()
+                                                        }
+                                                        else -> {}
+                                                    }
                                                 }
                                             },
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                        border = CardDefaults.outlinedCardBorder()
-                                    ) {
-                                        Column(modifier = Modifier.padding(12.dp)) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = article.channel.uppercase(),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                    fontWeight = FontWeight.ExtraBold
-                                                )
-                                                Text(
-                                                    text = android.text.format.DateUtils.getRelativeTimeSpanString(article.pubDate).toString(),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.outline
-                                                )
-                                            }
-                                            Text(
-                                                text = article.title,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.padding(top = 4.dp)
-                                            )
-                                            Text(
-                                                text = article.description,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 2,
-                                                modifier = Modifier.padding(top = 4.dp)
-                                            )
-                                        }
+                                            onConfigure = { onNavigateToSettings(agent.metadata.id) },
+                                            onDelete = if (isUserDefined) {
+                                                {
+                                                    coroutineScope.launch {
+                                                        agent.cancel(context)
+                                                        withContext(Dispatchers.IO) {
+                                                            database.taskDao().deleteUserTaskById(agent.metadata.id)
+                                                        }
+                                                        Toast.makeText(context, "Agent deleted successfully.", Toast.LENGTH_SHORT).show()
+                                                        try {
+                                                            com.example.widget.updateWidget(context)
+                                                        } catch (e: Exception) {}
+                                                    }
+                                                }
+                                            } else null
+                                        )
                                     }
                                 }
                             }
                         }
                     }
-                }
-
-                groupedCategories.forEach { category ->
-                    val filtered = compiledTasksList.filter { it.metadata.category == category }
-                    if (filtered.isNotEmpty()) {
-                        item {
-                            CategoryDivider(category)
-                        }
-                        items(filtered) { agent ->
-                            val isUserDefined = agent.metadata.id.startsWith("user_")
-                            AgentInteractionCard(
-                                agent = agent,
-                                preferencesManager = preferencesManager,
-                                isRunning = runningTaskId == agent.metadata.id,
-                                onRunNow = {
-                                    runningTaskId = agent.metadata.id
-                                    coroutineScope.launch {
-                                        // Dynamic variable loading
-                                        val runResult = withContext(Dispatchers.IO) {
-                                            try {
-                                                val pm = preferencesManager
-                                                val vals = mapOf(
-                                                    "schedule_time" to pm.newsScheduleTimeFlow.first(),
-                                                    "reminder_delay_minutes" to pm.reminderDelayMinutesFlow.first().toString(),
-                                                    "whatsapp_response_tone" to pm.whatsappResponseToneFlow.first(),
-                                                    "gmail_user_email" to pm.gmailUserEmailFlow.first(),
-                                                    "sheet_url" to pm.sheetUrlFlow.first(),
-                                                    "template_doc_url" to pm.templateDocUrlFlow.first(),
-                                                    "contact_name" to pm.lastMissedCallContactFlow.first()
-                                                )
-                                                agent.execute(context, TaskSettings(vals))
-                                            } catch (e: Exception) {
-                                                TaskResult.Error(e.localizedMessage ?: "execution error")
-                                            }
-                                        }
-
-                                        // Store run history
-                                        withContext(Dispatchers.IO) {
-                                            database.taskDao().insertHistory(
-                                                TaskHistory(
-                                                    taskId = agent.metadata.id,
-                                                    taskName = agent.metadata.name,
-                                                    status = if (runResult is TaskResult.Success) "SUCCESS" else "ERROR",
-                                                    message = when (runResult) {
-                                                        is TaskResult.Success -> runResult.output ?: "Manual trigger executed."
-                                                        is TaskResult.Error -> runResult.message
-                                                        is TaskResult.Cancelled -> "Cancelled."
-                                                    }
-                                                )
-                                            )
-                                        }
-
-                                        runningTaskId = null
-                                        when (runResult) {
-                                            is TaskResult.Success -> {
-                                                aiOutputDisplay = runResult.output ?: "Execution finished successfully!"
-                                            }
-                                            is TaskResult.Error -> {
-                                                Toast.makeText(context, "Error: ${runResult.message}", Toast.LENGTH_LONG).show()
-                                            }
-                                            else -> {}
-                                        }
-                                    }
-                                },
-                                onConfigure = { onNavigateToSettings(agent.metadata.id) },
-                                onDelete = if (isUserDefined) {
-                                    {
-                                        coroutineScope.launch {
-                                            agent.cancel(context)
-                                            withContext(Dispatchers.IO) {
-                                                database.taskDao().deleteUserTaskById(agent.metadata.id)
-                                            }
-                                            Toast.makeText(context, "Agent deleted successfully.", Toast.LENGTH_SHORT).show()
-                                            try {
-                                                com.example.widget.updateWidget(context)
-                                            } catch (e: Exception) {}
-                                        }
-                                    }
-                                } else null
-                            )
-                        }
-                    }
-                }
-                item {
-                    Spacer(modifier = Modifier.height(100.dp))
                 }
             }
         }
@@ -350,10 +374,10 @@ val groupedCategories = listOf(
 @Composable
 fun CategoryDivider(category: TaskCategory) {
     val name = when (category) {
-        TaskCategory.NEWS -> "News & Editorial Brifs"
-        TaskCategory.COMMUNICATION -> "Dialer & Correspondence Assistants"
-        TaskCategory.PRODUCTIVITY -> "Workspace Automation"
-        TaskCategory.CUSTOM -> "My Customized Automated Schemes"
+        TaskCategory.NEWS -> "Trending News & Summarizer Agents"
+        TaskCategory.COMMUNICATION -> "Dialer & Messaging Correspondence"
+        TaskCategory.PRODUCTIVITY -> "Personal Office Productivity"
+        TaskCategory.CUSTOM -> "My Custom Automated Workflows"
     }
 
     Text(
@@ -402,7 +426,12 @@ fun AgentInteractionCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(modifier = Modifier.weight(1f)) {
-                    Icon(imageVector = agent.metadata.icon, contentDescription = null, sizeModifier = Modifier.size(28.dp), tint = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+                    Icon(
+                        imageVector = agent.metadata.icon,
+                        contentDescription = null,
+                        sizeModifier = Modifier.size(28.dp),
+                        tint = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                    )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(

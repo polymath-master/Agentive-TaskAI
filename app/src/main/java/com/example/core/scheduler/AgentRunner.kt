@@ -100,13 +100,9 @@ class AgentRunner(private val context: Context) {
         // 2. Execute Task
         val pm = com.example.core.storage.PreferencesManager(context)
         val vals = mapOf(
-            "schedule_time" to pm.newsScheduleTimeFlow.first(),
-            "reminder_delay_minutes" to pm.reminderDelayMinutesFlow.first().toString(),
-            "whatsapp_response_tone" to pm.whatsappResponseToneFlow.first(),
             "gmail_user_email" to pm.gmailUserEmailFlow.first(),
             "sheet_url" to pm.sheetUrlFlow.first(),
-            "template_doc_url" to pm.templateDocUrlFlow.first(),
-            "contact_name" to pm.lastMissedCallContactFlow.first()
+            "template_doc_url" to pm.templateDocUrlFlow.first()
         )
         val settings = TaskSettings(vals)
         val result = try {

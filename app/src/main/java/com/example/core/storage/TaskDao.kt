@@ -66,4 +66,49 @@ interface TaskDao {
 
     @Query("DELETE FROM email_recipients")
     suspend fun clearRecipients()
+
+    // --- Books ---
+    @Query("SELECT * FROM books")
+    fun getAllBooksFlow(): Flow<List<BookEntity>>
+
+    @Query("SELECT * FROM books")
+    suspend fun getAllBooks(): List<BookEntity>
+
+    @Query("SELECT * FROM books WHERE id = :id")
+    suspend fun getBookById(id: Long): BookEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBook(book: BookEntity): Long
+
+    @Query("DELETE FROM books WHERE id = :id")
+    suspend fun deleteBookById(id: Long)
+
+    @Update
+    suspend fun updateBook(book: BookEntity)
+
+    // --- Bookmarks ---
+    @Query("SELECT * FROM bookmarks WHERE bookId = :bookId ORDER BY timestamp DESC")
+    fun getBookmarksForBookFlow(bookId: Long): Flow<List<BookmarkEntity>>
+
+    @Query("SELECT * FROM bookmarks WHERE bookId = :bookId")
+    suspend fun getBookmarksForBook(bookId: Long): List<BookmarkEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBookmark(bookmark: BookmarkEntity)
+
+    @Query("DELETE FROM bookmarks WHERE id = :id")
+    suspend fun deleteBookmark(id: Long)
+
+    // --- Prompts ---
+    @Query("SELECT * FROM prompt_templates ORDER BY updatedAt DESC")
+    fun getAllPromptsFlow(): Flow<List<PromptTemplate>>
+
+    @Query("SELECT * FROM prompt_templates WHERE id = :id")
+    suspend fun getPromptById(id: Long): PromptTemplate?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPrompt(prompt: PromptTemplate): Long
+
+    @Query("DELETE FROM prompt_templates WHERE id = :id")
+    suspend fun deletePromptById(id: Long)
 }

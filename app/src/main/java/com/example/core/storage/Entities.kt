@@ -41,3 +41,33 @@ data class EmailRecipient(
     val status: String = "PENDING", // "PENDING", "SENT", "FAILED"
     val errorMsg: String? = null
 )
+
+@Entity(tableName = "books")
+data class BookEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val author: String,
+    val filePath: String, // Can be asset or URI
+    val coverUrl: String? = null,
+    val currentOffset: Int = 0 // current character or page offset
+)
+
+@Entity(tableName = "bookmarks")
+data class BookmarkEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val bookId: Long,
+    val paragraphIndex: Int,
+    val text: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "prompt_templates")
+data class PromptTemplate(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val text: String,
+    val labels: String = "", // comma-separated tags
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+

@@ -2,6 +2,7 @@ package com.example.core.google
 
 import android.content.Context
 import android.util.Log
+import com.example.BuildConfig
 import com.example.core.storage.EncryptedStorageHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,6 +12,11 @@ import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+
+sealed interface TokenResponse {
+    data class Success(val accessToken: String, val refreshToken: String, val email: String) : TokenResponse
+    data class Error(val message: String) : TokenResponse
+}
 
 /**
  * Handles Google OAuth 2.0 flow lifecycle, including token storage,
@@ -73,7 +79,9 @@ class GoogleApiHelper private constructor(context: Context) {
             .apply()
 
         EncryptedStorageHelper.saveToken(context, SECURE_KEY_ACCESS_TOKEN, accessToken)
-        EncryptedStorageHelper.saveToken(context, SECURE_KEY_REFRESH_TOKEN, refreshToken)
+        if (refreshToken.isNotEmpty()) {
+            EncryptedStorageHelper.saveToken(context, SECURE_KEY_REFRESH_TOKEN, refreshToken)
+        }
         _connectionState.value = true
         Log.d("GoogleApiHelper", "Successfully connected Google account: $email")
     }
@@ -114,41 +122,114 @@ class GoogleApiHelper private constructor(context: Context) {
         return@withContext performTokenRefresh(refreshToken)
     }
 
-    private suspend fun performTokenRefresh(refreshToken: String): String = withContext(Dispatchers.IO) {
-        Log.d("GoogleApiHelper", "Attempting to refresh Google API access token...")
-        
-        // Since we are running in AI Studio sandbox, we provide a robust dual-mode token manager.
-        // It supports both simulated environments and real OAuth token endpoints if client secrets exist.
-        val requestBody = FormBody.Builder()
-            .add("client_id", "dummy-client-id")
-            .add("client_secret", "dummy-client-secret")
-            .add("grant_type", "refresh_token")
-            .add("refresh_token", refreshToken)
-            .build()
+    /**
+     * Exchanges authorization code with Google for access and refresh tokens.
+     */
+    suspend fun exchangeAuthorizationCode(code: String): TokenResponse = withContext(Dispatchers.IO) {
+        val clientId = BuildConfig.GOOGLE_CLIENT_ID
+        val clientSecret = BuildConfig.GOOGLE_CLIENT_SECRET
+        val redirectUri = BuildConfig.GOOGLE_REDIRECT_URI
+
+        Log.d("GoogleApiHelper", "Exchanging authorization code with ClientID: $clientId, RedirectURI: $redirectUri")
+
+        val bodyBuilder = FormBody.Builder()
+            .add("client_id", clientId)
+            .add("grant_type", "authorization_code")
+            .add("code", code)
+            .add("redirect_uri", redirectUri)
+
+        if (clientSecret.isNotEmpty() && clientSecret != "YOUR_GOOGLE_CLIENT_SECRET") {
+            bodyBuilder.add("client_secret", clientSecret)
+        }
 
         val request = Request.Builder()
             .url("https://oauth2.googleapis.com/token")
-            .post(requestBody)
+            .post(bodyBuilder.build())
             .build()
 
+        try {
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                Log.d("GoogleApiHelper", "OAuth Token Response Code: ${response.code}")
+                if (response.isSuccessful) {
+                    val json = JSONObject(bodyStr)
+                    val accessToken = json.getString("access_token")
+                    val refreshToken = json.optString("refresh_token", "")
+                    
+                    // Fetch real user email with the newly received access token
+                    val email = fetchUserEmail(accessToken) ?: "authorized_user@gmail.com"
+                    return@withContext TokenResponse.Success(accessToken, refreshToken, email)
+                } else {
+                    return@withContext TokenResponse.Error("HTTP Error ${response.code}: $bodyStr")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("GoogleApiHelper", "Exception during token exchange: ${e.message}", e)
+            return@withContext TokenResponse.Error(e.message ?: "Unknown token exchange error")
+        }
+    }
+
+    /**
+     * Fetches the connected user's email address using their access token.
+     */
+    suspend fun fetchUserEmail(accessToken: String): String? = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url("https://www.googleapis.com/oauth2/v2/userinfo")
+            .header("Authorization", "Bearer $accessToken")
+            .build()
         try {
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     val body = response.body?.string() ?: ""
                     val json = JSONObject(body)
+                    return@withContext json.optString("email", null)
+                } else {
+                    Log.e("GoogleApiHelper", "Failed to fetch user email: HTTP ${response.code}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("GoogleApiHelper", "Exception fetching user email: ${e.message}", e)
+        }
+        return@withContext null
+    }
+
+    private suspend fun performTokenRefresh(refreshToken: String): String = withContext(Dispatchers.IO) {
+        Log.d("GoogleApiHelper", "Attempting to refresh Google API access token...")
+        
+        val clientId = BuildConfig.GOOGLE_CLIENT_ID
+        val clientSecret = BuildConfig.GOOGLE_CLIENT_SECRET
+
+        val bodyBuilder = FormBody.Builder()
+            .add("client_id", clientId)
+            .add("grant_type", "refresh_token")
+            .add("refresh_token", refreshToken)
+
+        if (clientSecret.isNotEmpty() && clientSecret != "YOUR_GOOGLE_CLIENT_SECRET") {
+            bodyBuilder.add("client_secret", clientSecret)
+        }
+
+        val request = Request.Builder()
+            .url("https://oauth2.googleapis.com/token")
+            .post(bodyBuilder.build())
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                if (response.isSuccessful) {
+                    val json = JSONObject(bodyStr)
                     val newAccessToken = json.getString("access_token")
                     EncryptedStorageHelper.saveToken(appContext, SECURE_KEY_ACCESS_TOKEN, newAccessToken)
                     Log.d("GoogleApiHelper", "Access token successfully refreshed.")
                     return@withContext newAccessToken
+                } else {
+                    Log.e("GoogleApiHelper", "Token refresh returned error code ${response.code}: $bodyStr")
                 }
             }
         } catch (e: Exception) {
-            Log.e("GoogleApiHelper", "Failed to contact OAuth server: ${e.message}. Using high-fidelity local refresh fallback.")
+            Log.e("GoogleApiHelper", "Failed to contact OAuth server: ${e.message}")
         }
 
-        // High fidelity sandbox fallback to maintain continuous background executions in emulator
-        val simulatedAccessToken = "ya29.sandboxed-token-${System.currentTimeMillis()}"
-        EncryptedStorageHelper.saveToken(appContext, SECURE_KEY_ACCESS_TOKEN, simulatedAccessToken)
-        return@withContext simulatedAccessToken
+        return@withContext ""
     }
 }

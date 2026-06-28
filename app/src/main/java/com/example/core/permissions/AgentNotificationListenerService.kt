@@ -4,8 +4,6 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.app.Notification
 import android.util.Log
-import com.example.task.callreminder.CallReminderTask
-
 class AgentNotificationListenerService : NotificationListenerService() {
 
     companion object {
@@ -78,13 +76,13 @@ class AgentNotificationListenerService : NotificationListenerService() {
         lastTriggerTime = now
         lastContactName = contactName
 
-        Log.d("NotificationListener", "Validated Missed Call from contact: $contactName (Package: $packageName, Key: $key)")
+        Log.d("NotificationListener", "Intercepted Missed Call from contact: $contactName (Package: $packageName, Key: $key)")
 
         try {
-            val callReminderTask = CallReminderTask(applicationContext)
-            callReminderTask.onMissedCallReceived(contactName)
+            // Decoupled: callreminder task has been removed from v4.0 spec
+            Log.i("NotificationListener", "Missed call registered in background: $contactName")
         } catch (e: Exception) {
-            Log.e("NotificationListener", "Error updating reminder prompt", e)
+            Log.e("NotificationListener", "Error processing missed call", e)
         }
     }
 
